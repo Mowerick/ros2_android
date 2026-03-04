@@ -60,8 +60,7 @@
           # JDK for keytool (debug keystore) and apksigner
           jdk17
 
-          # Build tools
-          cmake
+          # Build tools (cmake comes from Android SDK at 3.22.1)
           gnumake
           zip
           unzip
@@ -85,7 +84,10 @@
           ANDROID_SDK_ROOT = "${androidSdk}/libexec/android-sdk";
 
           shellHook = ''
+            # Use Android SDK's CMake 3.22.1 (CMake 4.x breaks old cmake_minimum_required)
+            export PATH="${androidSdk}/libexec/android-sdk/cmake/3.22.1/bin:$PATH"
             echo "ROS 2 Android build environment"
+            echo "  CMake: $(cmake --version | head -1)"
             echo "  NDK: 25.1.8937393 (arm64-v8a)"
             echo "  Platform: API 33 (Android 13)"
             echo "  Build Tools: 33.0.2"
