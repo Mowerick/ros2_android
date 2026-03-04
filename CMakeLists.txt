@@ -4,7 +4,7 @@ project(anroid_ros-superbuild)
 
 include(ExternalProject)
 
-set(minimum_target_sdk 30)
+set(minimum_target_sdk 33)
 
 if(NOT ANDROID_HOME)
   message(FATAL_ERROR "ANDROID_HOME must be given")
@@ -106,8 +106,8 @@ ExternalProject_Add(ros_for_android
 
 # Configure the manifest
 set(NAMESPACE "com.github.sloretz.sensors_for_ros")
-set(MIN_SDK_VERSION 30)
-set(TARGET_SDK_VERSION 30)
+set(MIN_SDK_VERSION 33)
+set(TARGET_SDK_VERSION 33)
 set(LIB_NAME "android-ros")
 configure_file(
   AndroidManifest.xml.in
