@@ -4,7 +4,7 @@
 
 #include "log.h"
 
-using sensors_for_ros::Sensor;
+using ros2_android::Sensor;
 
 /// Have event loop reading each sensor
 void Sensor::EventLoop() {

@@ -10,7 +10,7 @@
 #include "sensor.h"
 #include "sensor_descriptor.h"
 
-namespace sensors_for_ros {
+namespace ros2_android {
 class Sensors {
  public:
   Sensors(const std::string& package_name);
@@ -30,4 +30,4 @@ class Sensors {
 
   std::vector<std::unique_ptr<Sensor>> sensors_;
 };
-}  // namespace sensors_for_ros
+}  // namespace ros2_android

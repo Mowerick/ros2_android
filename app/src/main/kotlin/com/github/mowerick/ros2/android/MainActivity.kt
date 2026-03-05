@@ -1,4 +1,4 @@
-package com.github.sloretz.sensors_for_ros
+package com.github.mowerick.ros2.android
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -11,13 +11,13 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.github.sloretz.sensors_for_ros.ui.screens.CameraDetailScreen
-import com.github.sloretz.sensors_for_ros.ui.screens.DomainIdScreen
-import com.github.sloretz.sensors_for_ros.ui.screens.SensorDetailScreen
-import com.github.sloretz.sensors_for_ros.ui.screens.SensorListScreen
-import com.github.sloretz.sensors_for_ros.ui.theme.SensorsForRosTheme
-import com.github.sloretz.sensors_for_ros.viewmodel.RosViewModel
-import com.github.sloretz.sensors_for_ros.viewmodel.Screen
+import com.github.mowerick.ros2.android.ui.screens.CameraDetailScreen
+import com.github.mowerick.ros2.android.ui.screens.DomainIdScreen
+import com.github.mowerick.ros2.android.ui.screens.SensorDetailScreen
+import com.github.mowerick.ros2.android.ui.screens.SensorListScreen
+import com.github.mowerick.ros2.android.ui.theme.Ros2AndroidTheme
+import com.github.mowerick.ros2.android.viewmodel.RosViewModel
+import com.github.mowerick.ros2.android.viewmodel.Screen
 import java.net.NetworkInterface
 
 class MainActivity : ComponentActivity() {
@@ -42,7 +42,7 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            SensorsForRosTheme {
+            Ros2AndroidTheme {
                 val vm: RosViewModel = viewModel()
                 LaunchedEffect(Unit) { vm.loadNetworkInterfaces() }
 

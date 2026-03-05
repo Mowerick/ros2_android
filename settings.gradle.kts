@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "sensors_for_ros"
+rootProject.name = "ros2_android"
 include(":app")

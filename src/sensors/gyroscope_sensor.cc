@@ -2,7 +2,7 @@
 
 #include "log.h"
 
-using sensors_for_ros::GyroscopeSensor;
+using ros2_android::GyroscopeSensor;
 
 void GyroscopeSensor::OnEvent(const ASensorEvent& event) {
   if (ASENSOR_TYPE_GYROSCOPE != event.type) {

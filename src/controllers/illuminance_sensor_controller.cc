@@ -2,7 +2,7 @@
 
 #include <sstream>
 
-namespace sensors_for_ros {
+namespace ros2_android {
 
 IlluminanceSensorController::IlluminanceSensorController(
     IlluminanceSensor* sensor, RosInterface& ros)
@@ -38,4 +38,4 @@ std::string IlluminanceSensorController::PrettyName() const {
   return "Light Sensor";
 }
 
-}  // namespace sensors_for_ros
+}  // namespace ros2_android

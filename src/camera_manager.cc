@@ -6,9 +6,9 @@
 
 #include "log.h"
 
-using sensors_for_ros::CameraDescriptor;
-using sensors_for_ros::CameraDevice;
-using sensors_for_ros::CameraManager;
+using ros2_android::CameraDescriptor;
+using ros2_android::CameraDevice;
+using ros2_android::CameraManager;
 
 /// ***************** Camera manager stuff ********************
 CameraManager::CameraManager() {

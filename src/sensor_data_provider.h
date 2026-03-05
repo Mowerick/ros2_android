@@ -3,7 +3,7 @@
 #include <mutex>
 #include <string>
 
-namespace sensors_for_ros {
+namespace ros2_android {
 
 class SensorDataProvider {
  public:
@@ -24,4 +24,4 @@ class SensorDataProvider {
   const std::string unique_id_;
 };
 
-}  // namespace sensors_for_ros
+}  // namespace ros2_android

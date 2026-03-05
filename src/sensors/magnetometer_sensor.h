@@ -5,7 +5,7 @@
 #include "events.h"
 #include "sensor.h"
 
-namespace sensors_for_ros {
+namespace ros2_android {
 const float kMicroTeslaPerTesla = 1000000;
 
 class MagnetometerSensor
@@ -18,4 +18,4 @@ class MagnetometerSensor
  protected:
   void OnEvent(const ASensorEvent& event) override;
 };
-}  // namespace sensors_for_ros
+}  // namespace ros2_android

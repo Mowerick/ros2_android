@@ -7,13 +7,13 @@
 #include "sensors/illuminance_sensor.h"
 #include "sensors/magnetometer_sensor.h"
 
-using sensors_for_ros::AccelerometerSensor;
-using sensors_for_ros::BarometerSensor;
-using sensors_for_ros::GyroscopeSensor;
-using sensors_for_ros::IlluminanceSensor;
-using sensors_for_ros::MagnetometerSensor;
-using sensors_for_ros::SensorDescriptor;
-using sensors_for_ros::Sensors;
+using ros2_android::AccelerometerSensor;
+using ros2_android::BarometerSensor;
+using ros2_android::GyroscopeSensor;
+using ros2_android::IlluminanceSensor;
+using ros2_android::MagnetometerSensor;
+using ros2_android::SensorDescriptor;
+using ros2_android::Sensors;
 
 Sensors::Sensors(const std::string& package_name) {
   sensor_manager_ = ASensorManager_getInstanceForPackage(package_name.c_str());

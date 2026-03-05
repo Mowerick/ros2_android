@@ -1,11 +1,11 @@
-package com.github.sloretz.sensors_for_ros.viewmodel
+package com.github.mowerick.ros2.android.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.github.sloretz.sensors_for_ros.NativeBridge
-import com.github.sloretz.sensors_for_ros.model.CameraInfo
-import com.github.sloretz.sensors_for_ros.model.SensorInfo
-import com.github.sloretz.sensors_for_ros.model.SensorReading
+import com.github.mowerick.ros2.android.NativeBridge
+import com.github.mowerick.ros2.android.model.CameraInfo
+import com.github.mowerick.ros2.android.model.SensorInfo
+import com.github.mowerick.ros2.android.model.SensorReading
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

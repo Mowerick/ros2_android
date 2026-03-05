@@ -7,7 +7,7 @@
 #include "ros_interface.h"
 #include "sensor_data_provider.h"
 
-namespace sensors_for_ros {
+namespace ros2_android {
 
 class CameraController : public SensorDataProvider {
  public:
@@ -48,4 +48,4 @@ class CameraController : public SensorDataProvider {
   Publisher<sensor_msgs::msg::Image> image_pub_;
 };
 
-}  // namespace sensors_for_ros
+}  // namespace ros2_android

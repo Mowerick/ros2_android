@@ -5,7 +5,7 @@
 #include "events.h"
 #include "sensor.h"
 
-namespace sensors_for_ros {
+namespace ros2_android {
 class BarometerSensor : public Sensor,
                         public event::Emitter<sensor_msgs::msg::FluidPressure> {
  public:
@@ -15,4 +15,4 @@ class BarometerSensor : public Sensor,
  protected:
   void OnEvent(const ASensorEvent& event) override;
 };
-}  // namespace sensors_for_ros
+}  // namespace ros2_android

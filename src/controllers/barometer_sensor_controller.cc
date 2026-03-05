@@ -2,7 +2,7 @@
 
 #include <sstream>
 
-namespace sensors_for_ros {
+namespace ros2_android {
 
 BarometerSensorController::BarometerSensorController(BarometerSensor* sensor,
                                                      RosInterface& ros)
@@ -37,4 +37,4 @@ std::string BarometerSensorController::PrettyName() const {
   return "Barometer Sensor";
 }
 
-}  // namespace sensors_for_ros
+}  // namespace ros2_android

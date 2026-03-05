@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "com.github.sloretz.sensors_for_ros"
+    namespace = "com.github.mowerick.ros2.android"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.github.sloretz.sensors_for_ros"
+        applicationId = "com.github.mowerick.ros2.android"
         minSdk = 33
         targetSdk = 33
         versionCode = 1

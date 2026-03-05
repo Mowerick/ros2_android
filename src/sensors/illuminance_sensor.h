@@ -5,7 +5,7 @@
 #include "events.h"
 #include "sensor.h"
 
-namespace sensors_for_ros {
+namespace ros2_android {
 class IlluminanceSensor : public Sensor,
                           public event::Emitter<sensor_msgs::msg::Illuminance> {
  public:
@@ -15,4 +15,4 @@ class IlluminanceSensor : public Sensor,
  protected:
   void OnEvent(const ASensorEvent& event) override;
 };
-}  // namespace sensors_for_ros
+}  // namespace ros2_android

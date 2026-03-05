@@ -1,4 +1,4 @@
-package com.github.sloretz.sensors_for_ros.ui.screens
+package com.github.mowerick.ros2.android.ui.screens
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,8 +15,8 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.github.sloretz.sensors_for_ros.model.CameraInfo
-import com.github.sloretz.sensors_for_ros.model.SensorInfo
+import com.github.mowerick.ros2.android.model.CameraInfo
+import com.github.mowerick.ros2.android.model.SensorInfo
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

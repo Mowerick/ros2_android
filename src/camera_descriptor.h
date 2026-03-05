@@ -4,7 +4,7 @@
 
 #include <string>
 
-namespace sensors_for_ros {
+namespace ros2_android {
 struct CameraDescriptor {
   std::string GetName() const;
 
@@ -16,4 +16,4 @@ struct CameraDescriptor {
   // TODO intrinsics, supported resolutions, supported frame rates,
   // distortion parameters, etc.
 };
-}  // namespace sensors_for_ros
+}  // namespace ros2_android

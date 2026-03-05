@@ -84,13 +84,13 @@ install: setup-debug $(APK_STAMP)
 ## Build, install, and launch app on device
 run: install
 	@echo "==> Launching app..."
-	adb shell am start -n com.github.sloretz.sensors_for_ros/.MainActivity
+	adb shell am start -n com.github.mowerick.ros2.android/.MainActivity
 	@echo "==> App launched"
 
 ## Tail device logs filtered to the app
 logcat:
-	adb logcat --pid=$$(adb shell pidof com.github.sloretz.sensors_for_ros) 2>/dev/null \
-		|| adb logcat -s "sensors_for_ros"
+	adb logcat --pid=$$(adb shell pidof com.github.mowerick.ros2.android) 2>/dev/null \
+		|| adb logcat -s "ros2_android"
 
 ## Clean everything
 clean: clean-native clean-app

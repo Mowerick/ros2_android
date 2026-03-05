@@ -1,4 +1,4 @@
-package com.github.sloretz.sensors_for_ros.ui.screens
+package com.github.mowerick.ros2.android.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -24,7 +24,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.github.sloretz.sensors_for_ros.ui.components.NumericKeypad
+import com.github.mowerick.ros2.android.ui.components.NumericKeypad
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

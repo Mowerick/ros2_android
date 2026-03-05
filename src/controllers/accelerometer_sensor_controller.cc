@@ -2,7 +2,7 @@
 
 #include <sstream>
 
-namespace sensors_for_ros {
+namespace ros2_android {
 
 AccelerometerSensorController::AccelerometerSensorController(
     AccelerometerSensor* sensor, RosInterface& ros)
@@ -38,4 +38,4 @@ std::string AccelerometerSensorController::PrettyName() const {
   return "Accelerometer Sensor";
 }
 
-}  // namespace sensors_for_ros
+}  // namespace ros2_android

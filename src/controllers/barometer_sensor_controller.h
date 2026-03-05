@@ -8,7 +8,7 @@
 #include "sensor_data_provider.h"
 #include "sensors/barometer_sensor.h"
 
-namespace sensors_for_ros {
+namespace ros2_android {
 
 class BarometerSensorController : public SensorDataProvider {
  public:
@@ -33,4 +33,4 @@ class BarometerSensorController : public SensorDataProvider {
   Publisher<sensor_msgs::msg::FluidPressure> publisher_;
 };
 
-}  // namespace sensors_for_ros
+}  // namespace ros2_android

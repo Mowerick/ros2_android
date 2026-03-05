@@ -35,33 +35,33 @@ class AndroidApp {
     for (auto& sensor : sensors_.GetSensors()) {
       if (ASENSOR_TYPE_LIGHT == sensor->Descriptor().type) {
         auto controller =
-            std::make_unique<sensors_for_ros::IlluminanceSensorController>(
-                static_cast<sensors_for_ros::IlluminanceSensor*>(sensor.get()),
+            std::make_unique<ros2_android::IlluminanceSensorController>(
+                static_cast<ros2_android::IlluminanceSensor*>(sensor.get()),
                 ros_);
         controllers_.emplace_back(std::move(controller));
       } else if (ASENSOR_TYPE_GYROSCOPE == sensor->Descriptor().type) {
         auto controller =
-            std::make_unique<sensors_for_ros::GyroscopeSensorController>(
-                static_cast<sensors_for_ros::GyroscopeSensor*>(sensor.get()),
+            std::make_unique<ros2_android::GyroscopeSensorController>(
+                static_cast<ros2_android::GyroscopeSensor*>(sensor.get()),
                 ros_);
         controllers_.emplace_back(std::move(controller));
       } else if (ASENSOR_TYPE_ACCELEROMETER == sensor->Descriptor().type) {
         auto controller =
-            std::make_unique<sensors_for_ros::AccelerometerSensorController>(
-                static_cast<sensors_for_ros::AccelerometerSensor*>(
+            std::make_unique<ros2_android::AccelerometerSensorController>(
+                static_cast<ros2_android::AccelerometerSensor*>(
                     sensor.get()),
                 ros_);
         controllers_.emplace_back(std::move(controller));
       } else if (ASENSOR_TYPE_PRESSURE == sensor->Descriptor().type) {
         auto controller =
-            std::make_unique<sensors_for_ros::BarometerSensorController>(
-                static_cast<sensors_for_ros::BarometerSensor*>(sensor.get()),
+            std::make_unique<ros2_android::BarometerSensorController>(
+                static_cast<ros2_android::BarometerSensor*>(sensor.get()),
                 ros_);
         controllers_.emplace_back(std::move(controller));
       } else if (ASENSOR_TYPE_MAGNETIC_FIELD == sensor->Descriptor().type) {
         auto controller =
-            std::make_unique<sensors_for_ros::MagnetometerSensorController>(
-                static_cast<sensors_for_ros::MagnetometerSensor*>(sensor.get()),
+            std::make_unique<ros2_android::MagnetometerSensorController>(
+                static_cast<ros2_android::MagnetometerSensor*>(sensor.get()),
                 ros_);
         controllers_.emplace_back(std::move(controller));
       }
@@ -77,12 +77,12 @@ class AndroidApp {
     if (camera_manager_.HasCameras()) {
       started_cameras_ = true;
       LOGI("Starting cameras");
-      std::vector<sensors_for_ros::CameraDescriptor> cameras =
+      std::vector<ros2_android::CameraDescriptor> cameras =
           camera_manager_.GetCameras();
       for (auto cam_desc : cameras) {
         LOGI("Camera: %s", cam_desc.GetName().c_str());
         auto camera_controller =
-            std::make_unique<sensors_for_ros::CameraController>(
+            std::make_unique<ros2_android::CameraController>(
                 &camera_manager_, cam_desc, ros_);
         camera_controllers_.emplace_back(std::move(camera_controller));
       }
@@ -191,34 +191,34 @@ class AndroidApp {
 
   std::string cache_dir_;
   std::string package_name_;
-  sensors_for_ros::RosInterface ros_;
-  sensors_for_ros::Sensors sensors_;
+  ros2_android::RosInterface ros_;
+  ros2_android::Sensors sensors_;
 
-  std::vector<std::unique_ptr<sensors_for_ros::SensorDataProvider>>
+  std::vector<std::unique_ptr<ros2_android::SensorDataProvider>>
       controllers_;
-  std::vector<std::unique_ptr<sensors_for_ros::CameraController>>
+  std::vector<std::unique_ptr<ros2_android::CameraController>>
       camera_controllers_;
 
-  sensors_for_ros::CameraManager camera_manager_;
+  ros2_android::CameraManager camera_manager_;
   bool started_cameras_ = false;
   std::vector<std::string> network_interfaces_;
 };
 
 static std::unique_ptr<AndroidApp> g_app;
 
-// JNI function names: underscores in package name become _1
-// com.github.sloretz.sensors_for_ros -> com_github_sloretz_sensors_1for_1ros
+// JNI function names: dots become underscores
+// com.github.mowerick.ros2.android -> com_github_mowerick_ros2_android
 
 extern "C" {
 
 JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void* /*reserved*/) {
   g_jvm = vm;
-  sensors_for_ros::SetJavaVM(vm);
+  ros2_android::SetJavaVM(vm);
   return JNI_VERSION_1_6;
 }
 
 JNIEXPORT void JNICALL
-Java_com_github_sloretz_sensors_1for_1ros_NativeBridge_nativeInit(
+Java_com_github_mowerick_ros2_android_NativeBridge_nativeInit(
     JNIEnv* env, jobject /*thiz*/, jstring cache_dir, jstring package_name) {
   const char* cache_dir_c = env->GetStringUTFChars(cache_dir, nullptr);
   const char* package_name_c = env->GetStringUTFChars(package_name, nullptr);
@@ -232,7 +232,7 @@ Java_com_github_sloretz_sensors_1for_1ros_NativeBridge_nativeInit(
 }
 
 JNIEXPORT void JNICALL
-Java_com_github_sloretz_sensors_1for_1ros_NativeBridge_nativeDestroy(
+Java_com_github_mowerick_ros2_android_NativeBridge_nativeDestroy(
     JNIEnv* /*env*/, jobject /*thiz*/) {
   if (g_app) {
     LOGI("nativeDestroy");
@@ -243,7 +243,7 @@ Java_com_github_sloretz_sensors_1for_1ros_NativeBridge_nativeDestroy(
 }
 
 JNIEXPORT void JNICALL
-Java_com_github_sloretz_sensors_1for_1ros_NativeBridge_nativeSetNetworkInterfaces(
+Java_com_github_mowerick_ros2_android_NativeBridge_nativeSetNetworkInterfaces(
     JNIEnv* env, jobject /*thiz*/, jobjectArray interfaces) {
   if (!g_app) return;
 
@@ -260,7 +260,7 @@ Java_com_github_sloretz_sensors_1for_1ros_NativeBridge_nativeSetNetworkInterface
 }
 
 JNIEXPORT void JNICALL
-Java_com_github_sloretz_sensors_1for_1ros_NativeBridge_nativeOnPermissionResult(
+Java_com_github_mowerick_ros2_android_NativeBridge_nativeOnPermissionResult(
     JNIEnv* env, jobject /*thiz*/, jstring permission, jboolean granted) {
   if (!g_app) return;
 
@@ -275,7 +275,7 @@ Java_com_github_sloretz_sensors_1for_1ros_NativeBridge_nativeOnPermissionResult(
 }
 
 JNIEXPORT void JNICALL
-Java_com_github_sloretz_sensors_1for_1ros_NativeBridge_nativeStartRos(
+Java_com_github_mowerick_ros2_android_NativeBridge_nativeStartRos(
     JNIEnv* env, jobject /*thiz*/, jint domain_id, jstring network_interface) {
   if (!g_app) return;
 
@@ -285,7 +285,7 @@ Java_com_github_sloretz_sensors_1for_1ros_NativeBridge_nativeStartRos(
 }
 
 JNIEXPORT jstring JNICALL
-Java_com_github_sloretz_sensors_1for_1ros_NativeBridge_nativeGetSensorList(
+Java_com_github_mowerick_ros2_android_NativeBridge_nativeGetSensorList(
     JNIEnv* env, jobject /*thiz*/) {
   if (!g_app) return env->NewStringUTF("[]");
   std::string json = g_app->GetSensorListJson();
@@ -293,7 +293,7 @@ Java_com_github_sloretz_sensors_1for_1ros_NativeBridge_nativeGetSensorList(
 }
 
 JNIEXPORT jstring JNICALL
-Java_com_github_sloretz_sensors_1for_1ros_NativeBridge_nativeGetSensorData(
+Java_com_github_mowerick_ros2_android_NativeBridge_nativeGetSensorData(
     JNIEnv* env, jobject /*thiz*/, jstring unique_id) {
   if (!g_app) return env->NewStringUTF("{}");
 
@@ -304,7 +304,7 @@ Java_com_github_sloretz_sensors_1for_1ros_NativeBridge_nativeGetSensorData(
 }
 
 JNIEXPORT jstring JNICALL
-Java_com_github_sloretz_sensors_1for_1ros_NativeBridge_nativeGetCameraList(
+Java_com_github_mowerick_ros2_android_NativeBridge_nativeGetCameraList(
     JNIEnv* env, jobject /*thiz*/) {
   if (!g_app) return env->NewStringUTF("[]");
   std::string json = g_app->GetCameraListJson();
@@ -312,7 +312,7 @@ Java_com_github_sloretz_sensors_1for_1ros_NativeBridge_nativeGetCameraList(
 }
 
 JNIEXPORT void JNICALL
-Java_com_github_sloretz_sensors_1for_1ros_NativeBridge_nativeEnableCamera(
+Java_com_github_mowerick_ros2_android_NativeBridge_nativeEnableCamera(
     JNIEnv* env, jobject /*thiz*/, jstring unique_id) {
   if (!g_app) return;
 
@@ -322,7 +322,7 @@ Java_com_github_sloretz_sensors_1for_1ros_NativeBridge_nativeEnableCamera(
 }
 
 JNIEXPORT void JNICALL
-Java_com_github_sloretz_sensors_1for_1ros_NativeBridge_nativeDisableCamera(
+Java_com_github_mowerick_ros2_android_NativeBridge_nativeDisableCamera(
     JNIEnv* env, jobject /*thiz*/, jstring unique_id) {
   if (!g_app) return;
 
@@ -332,7 +332,7 @@ Java_com_github_sloretz_sensors_1for_1ros_NativeBridge_nativeDisableCamera(
 }
 
 JNIEXPORT jstring JNICALL
-Java_com_github_sloretz_sensors_1for_1ros_NativeBridge_nativeGetNetworkInterfaces(
+Java_com_github_mowerick_ros2_android_NativeBridge_nativeGetNetworkInterfaces(
     JNIEnv* env, jobject /*thiz*/) {
   if (!g_app) return env->NewStringUTF("[]");
 

@@ -1,4 +1,4 @@
-package com.github.sloretz.sensors_for_ros.ui.components
+package com.github.mowerick.ros2.android.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable

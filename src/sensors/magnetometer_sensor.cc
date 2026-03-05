@@ -2,7 +2,7 @@
 
 #include "log.h"
 
-using sensors_for_ros::MagnetometerSensor;
+using ros2_android::MagnetometerSensor;
 
 void MagnetometerSensor::OnEvent(const ASensorEvent& event) {
   if (ASENSOR_TYPE_MAGNETIC_FIELD != event.type) {

@@ -7,7 +7,7 @@
 #include "events.h"
 #include "log.h"
 
-namespace sensors_for_ros {
+namespace ros2_android {
 class RosInterface {
  public:
   RosInterface();
@@ -138,4 +138,4 @@ class Publisher {
   rclcpp::QoS qos_ = rclcpp::QoS(1);
   typename rclcpp::Publisher<MsgT>::SharedPtr publisher_;
 };
-}  // namespace sensors_for_ros
+}  // namespace ros2_android

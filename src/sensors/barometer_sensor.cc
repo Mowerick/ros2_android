@@ -2,7 +2,7 @@
 
 #include "log.h"
 
-using sensors_for_ros::BarometerSensor;
+using ros2_android::BarometerSensor;
 
 void BarometerSensor::OnEvent(const ASensorEvent& event) {
   if (ASENSOR_TYPE_PRESSURE != event.type) {

@@ -6,19 +6,19 @@ Difficulties and decisions encountered while converting the app from a pure `Nat
 
 `NativeActivity` prevents receiving Android system intents (e.g., `ACTION_USB_DEVICE_ATTACHED`) and calling Java-only APIs (`UsbManager`, `WifiManager.MulticastLock`). The thesis requires USB sensor integration (LiDAR, camera via `libusb`/`libuvc`) and DDS multicast, both of which need Java-layer access. A standard Kotlin Activity is the prerequisite for all subsequent work.
 
-## JNI function name mangling with underscores in package name
+## JNI function name mangling
 
-The package name `com.github.sloretz.sensors_for_ros` contains underscores. In JNI C function names, literal underscores in package/class names must be escaped as `_1` (JNI spec section 2.2). So `sensors_for_ros` becomes `sensors_1for_1ros` in every `JNIEXPORT` function:
+The package was renamed from `com.github.sloretz.sensors_for_ros` to `com.github.mowerick.ros2.android`. The new package has no underscores, so the JNI function names are straightforward dot-to-underscore mapping:
 
 ```c
-// Wrong - would resolve to package "com.github.sloretz.sensors.for.ros"
-Java_com_github_sloretz_sensors_for_ros_NativeBridge_nativeInit(...)
-
-// Correct
+// Old (underscores in package name required _1 escaping per JNI spec section 2.2)
 Java_com_github_sloretz_sensors_1for_1ros_NativeBridge_nativeInit(...)
+
+// New (no underscores in package name, no escaping needed)
+Java_com_github_mowerick_ros2_android_NativeBridge_nativeInit(...)
 ```
 
-Getting this wrong causes `UnsatisfiedLinkError` at runtime with no compile-time warning. The alternative would be to rename the package (breaking the existing namespace), or use `RegisterNatives` in `JNI_OnLoad` instead of relying on name-based resolution.
+Getting the mangling wrong causes `UnsatisfiedLinkError` at runtime with no compile-time warning.
 
 ## LTO stripping JNI entry points
 

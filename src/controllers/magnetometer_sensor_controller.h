@@ -8,7 +8,7 @@
 #include "sensor_data_provider.h"
 #include "sensors/magnetometer_sensor.h"
 
-namespace sensors_for_ros {
+namespace ros2_android {
 
 class MagnetometerSensorController : public SensorDataProvider {
  public:
@@ -33,4 +33,4 @@ class MagnetometerSensorController : public SensorDataProvider {
   Publisher<sensor_msgs::msg::MagneticField> publisher_;
 };
 
-}  // namespace sensors_for_ros
+}  // namespace ros2_android

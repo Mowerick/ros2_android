@@ -2,10 +2,10 @@
 
 static JavaVM* g_java_vm = nullptr;
 
-void sensors_for_ros::SetJavaVM(JavaVM* vm) {
+void ros2_android::SetJavaVM(JavaVM* vm) {
   g_java_vm = vm;
 }
 
-JavaVM* sensors_for_ros::GetJavaVM() {
+JavaVM* ros2_android::GetJavaVM() {
   return g_java_vm;
 }

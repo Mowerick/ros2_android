@@ -8,7 +8,7 @@
 #include "sensor_data_provider.h"
 #include "sensors/accelerometer_sensor.h"
 
-namespace sensors_for_ros {
+namespace ros2_android {
 
 class AccelerometerSensorController : public SensorDataProvider {
  public:
@@ -33,4 +33,4 @@ class AccelerometerSensorController : public SensorDataProvider {
   Publisher<geometry_msgs::msg::AccelStamped> publisher_;
 };
 
-}  // namespace sensors_for_ros
+}  // namespace ros2_android

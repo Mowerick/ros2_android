@@ -2,7 +2,7 @@
 #include <android/looper.h>
 #include <android/sensor.h>
 
-namespace sensors_for_ros {
+namespace ros2_android {
 // TODO document who uses this
 struct SensorDescriptor {
   explicit SensorDescriptor(ASensorRef _sensor_ref);
@@ -40,4 +40,4 @@ struct SensorDescriptor {
   int min_delay;
   float resolution;
 };
-}  // namespace sensors_for_ros
+}  // namespace ros2_android

@@ -4,8 +4,8 @@
 
 #include "log.h"
 
-using sensors_for_ros::CameraController;
-using sensors_for_ros::CameraDevice;
+using ros2_android::CameraController;
+using ros2_android::CameraDevice;
 
 CameraController::CameraController(CameraManager* camera_manager,
                                    const CameraDescriptor& camera_descriptor,

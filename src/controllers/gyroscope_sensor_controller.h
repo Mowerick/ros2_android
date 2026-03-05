@@ -8,7 +8,7 @@
 #include "sensor_data_provider.h"
 #include "sensors/gyroscope_sensor.h"
 
-namespace sensors_for_ros {
+namespace ros2_android {
 
 class GyroscopeSensorController : public SensorDataProvider {
  public:
@@ -33,4 +33,4 @@ class GyroscopeSensorController : public SensorDataProvider {
   Publisher<geometry_msgs::msg::TwistStamped> publisher_;
 };
 
-}  // namespace sensors_for_ros
+}  // namespace ros2_android

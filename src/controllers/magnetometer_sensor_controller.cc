@@ -2,7 +2,7 @@
 
 #include <sstream>
 
-namespace sensors_for_ros {
+namespace ros2_android {
 
 MagnetometerSensorController::MagnetometerSensorController(
     MagnetometerSensor* sensor, RosInterface& ros)
@@ -40,4 +40,4 @@ std::string MagnetometerSensorController::PrettyName() const {
   return "Magnetometer Sensor";
 }
 
-}  // namespace sensors_for_ros
+}  // namespace ros2_android

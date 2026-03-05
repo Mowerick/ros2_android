@@ -2,7 +2,7 @@
 
 #include <jni.h>
 
-namespace sensors_for_ros {
+namespace ros2_android {
 void SetJavaVM(JavaVM* vm);
 JavaVM* GetJavaVM();
-}  // namespace sensors_for_ros
+}  // namespace ros2_android

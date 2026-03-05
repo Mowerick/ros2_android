@@ -2,7 +2,7 @@
 
 #include <sstream>
 
-namespace sensors_for_ros {
+namespace ros2_android {
 
 GyroscopeSensorController::GyroscopeSensorController(GyroscopeSensor* sensor,
                                                      RosInterface& ros)
@@ -38,4 +38,4 @@ std::string GyroscopeSensorController::PrettyName() const {
   return "Gyroscope Sensor";
 }
 
-}  // namespace sensors_for_ros
+}  // namespace ros2_android

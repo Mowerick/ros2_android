@@ -1,4 +1,4 @@
-package com.github.sloretz.sensors_for_ros.model
+package com.github.mowerick.ros2.android.model
 
 data class SensorReading(
     val values: List<Double>,

@@ -18,7 +18,7 @@
 #include "events.h"
 #include "log.h"
 
-namespace sensors_for_ros {
+namespace ros2_android {
 struct AImageDeleter {
   void operator()(AImage* image) { AImage_delete(image); }
 };
@@ -73,4 +73,4 @@ class CameraDevice : public event::Emitter<
   std::condition_variable wake_cv_;
   std::thread thread_;
 };
-}  // namespace sensors_for_ros
+}  // namespace ros2_android

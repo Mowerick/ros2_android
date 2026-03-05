@@ -2,7 +2,7 @@
 
 #include "log.h"
 
-using sensors_for_ros::IlluminanceSensor;
+using ros2_android::IlluminanceSensor;
 
 void IlluminanceSensor::OnEvent(const ASensorEvent& event) {
   if (ASENSOR_TYPE_LIGHT != event.type) {

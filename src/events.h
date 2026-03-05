@@ -2,7 +2,7 @@
 
 #include <functional>
 
-namespace sensors_for_ros {
+namespace ros2_android {
 namespace event {
 struct SensorEvent {
   // Sensor handle (ASensorEvent::sensor) uniquely identifying the sensor
@@ -27,4 +27,4 @@ class Emitter {
   Listener<EventType> event_listener_;
 };
 }  // namespace event
-}  // namespace sensors_for_ros
+}  // namespace ros2_android

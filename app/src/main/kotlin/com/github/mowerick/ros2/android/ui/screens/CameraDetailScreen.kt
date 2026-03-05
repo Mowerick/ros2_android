@@ -1,4 +1,4 @@
-package com.github.sloretz.sensors_for_ros.ui.screens
+package com.github.mowerick.ros2.android.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -21,8 +21,8 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.github.sloretz.sensors_for_ros.model.CameraInfo
-import com.github.sloretz.sensors_for_ros.ui.components.TopicInfoCard
+import com.github.mowerick.ros2.android.model.CameraInfo
+import com.github.mowerick.ros2.android.ui.components.TopicInfoCard
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

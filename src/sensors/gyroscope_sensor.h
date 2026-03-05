@@ -5,7 +5,7 @@
 #include "events.h"
 #include "sensor.h"
 
-namespace sensors_for_ros {
+namespace ros2_android {
 class GyroscopeSensor
     : public Sensor,
       public event::Emitter<geometry_msgs::msg::TwistStamped> {
@@ -16,4 +16,4 @@ class GyroscopeSensor
  protected:
   void OnEvent(const ASensorEvent& event) override;
 };
-}  // namespace sensors_for_ros
+}  // namespace ros2_android

@@ -8,7 +8,7 @@
 #include "sensor_data_provider.h"
 #include "sensors/illuminance_sensor.h"
 
-namespace sensors_for_ros {
+namespace ros2_android {
 
 class IlluminanceSensorController : public SensorDataProvider {
  public:
@@ -33,4 +33,4 @@ class IlluminanceSensorController : public SensorDataProvider {
   Publisher<sensor_msgs::msg::Illuminance> publisher_;
 };
 
-}  // namespace sensors_for_ros
+}  // namespace ros2_android

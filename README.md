@@ -1,6 +1,6 @@
-# Sensors for ROS
+# Ros2 Android
 
-Sensors for ROS is an app that publishes sensor data from an Android device onto ROS 2 topics.
+Fork of [sloretz/sensors_for_ros](https://github.com/sloretz/sensors_for_ros) - an Android app that publishes sensor data onto ROS 2 topics.
 Currently it supports ROS Humble.
 
 **Supported sensors**
@@ -11,11 +11,11 @@ Currently it supports ROS Humble.
 * Illuminance
 * Magnetometer
 
-The app uses a Java/Kotlin + Native hybrid architecture: a Kotlin Activity with Jetpack Compose hosts a `SurfaceView` for the Dear ImGui rendering, while the native layer (`libandroid-ros.so`) handles ROS 2, sensors, and cameras. ROS 2 packages up to `rclcpp` are cross-compiled via a CMake superbuild, then Gradle bundles everything into an APK.
+The app uses a Java/Kotlin + Native hybrid architecture: a Kotlin Activity with Jetpack Compose UI, while the native layer (`libandroid-ros.so`) handles ROS 2, sensors, and cameras. ROS 2 packages up to `rclcpp` are cross-compiled via a CMake superbuild, then Gradle bundles everything into an APK.
 
 ## Inspiration
 
-These projects were extremely helpful, and used as a reference for this one:
+The original [sensors_for_ros](https://github.com/sloretz/sensors_for_ros) by Shane Loretz, and these projects:
 
 * https://github.com/cnlohr/rawdrawandroid
 * https://github.com/ocornut/imgui/tree/master/examples/example_android_opengl3
@@ -23,12 +23,12 @@ These projects were extremely helpful, and used as a reference for this one:
 
 ## How to install it
 
-Currently the only way to get **Sensors for ROS** is to build it from source.
+Currently the only way to get **Ros2 Android** is to build it from source.
 It is not yet available on Google's app store.
 
 ## How to build it from source
 
-You do not need ROS installed on your machine to build the **Sensors for ROS** app.
+You do not need ROS installed on your machine to build the **Ros2 Android** app.
 However, it's needed to use the sensor data being published by your Android device.
 Follow [these instructions to install ROS Humble](https://docs.ros.org/en/humble/Installation.html).
 
@@ -123,10 +123,10 @@ keytool -genkey -v -keystore ~/.android/debug.keystore -alias adb_debug_key -key
 
 ### Clone the repo
 
-The official repo is [`sloretz/sensors_for_ros`](https://github.com/sloretz/sensors_for_ros).
+This is a fork of [`sloretz/sensors_for_ros`](https://github.com/sloretz/sensors_for_ros).
 
 ```
-git clone https://github.com/sloretz/sensors_for_ros.git
+git clone https://github.com/mowerick/ros2_android.git
 ```
 
 Next initialize the git submodules.
@@ -190,7 +190,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 Start the app from the command line:
 
 ```bash
-adb shell am start -n com.github.sloretz.sensors_for_ros/.MainActivity
+adb shell am start -n com.github.mowerick.ros2.android/.MainActivity
 ```
 
 ### Logging
@@ -204,13 +204,13 @@ adb logcat -v color
 Filter logs to only this app:
 
 ```bash
-adb logcat -v color --pid=$(adb shell pidof -s com.github.sloretz.sensors_for_ros)
+adb logcat -v color --pid=$(adb shell pidof -s com.github.mowerick.ros2.android)
 ```
 
 Clear the log buffer before a run:
 
 ```bash
-adb logcat -c && adb logcat -v color --pid=$(adb shell pidof -s com.github.sloretz.sensors_for_ros)
+adb logcat -c && adb logcat -v color --pid=$(adb shell pidof -s com.github.mowerick.ros2.android)
 ```
 
 Save logs to a file:
@@ -232,7 +232,7 @@ adb logcat | $ANDROID_HOME/ndk/*/ndk-stack -sym build/jniLibs/arm64-v8a/
 Grant a permission without writing the request code (app must be installed but not running):
 
 ```bash
-adb shell pm grant com.github.sloretz.sensors_for_ros android.permission.CAMERA
+adb shell pm grant com.github.mowerick.ros2.android android.permission.CAMERA
 ```
 
 # Random lessons

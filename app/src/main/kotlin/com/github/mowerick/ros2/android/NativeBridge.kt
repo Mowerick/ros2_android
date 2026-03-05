@@ -1,4 +1,4 @@
-package com.github.sloretz.sensors_for_ros
+package com.github.mowerick.ros2.android
 
 object NativeBridge {
     init {
