@@ -53,7 +53,11 @@ $(DEPS_STAMP): ros.repos
 ## Build native ROS 2 dependencies (CMake cross-compilation)
 native: $(NATIVE_STAMP)
 
-$(NATIVE_STAMP): $(DEPS_STAMP) CMakeLists.txt dependencies.cmake dep_build.cmake
+NATIVE_SOURCES := $(wildcard src/*.cc src/*.h src/*.cpp \
+	src/**/*.cc src/**/*.h src/**/*.cpp \
+	src/CMakeLists.txt)
+
+$(NATIVE_STAMP): $(DEPS_STAMP) CMakeLists.txt dependencies.cmake dep_build.cmake $(NATIVE_SOURCES)
 	@echo "==> Building native ROS 2 dependencies..."
 	@mkdir -p $(BUILD_DIR)
 	cd $(BUILD_DIR) && cmake ../ -DANDROID_HOME=$(ANDROID_HOME) -DCMAKE_BUILD_TYPE=$(BUILD_TYPE)
@@ -138,8 +142,8 @@ help:
 	@echo "  install      Build + install APK to connected device"
 	@echo "  run          Build, install, and launch app on device"
 	@echo "  logcat       Tail device logs filtered to the app"
-	@echo "  clean        Clean build artifacts (keeps deps)"
-	@echo "  clean-app    Clean app build only (keeps native)"
+	@echo "  clean        Clean build artifacts (runs clean-native and clean-app)"
+	@echo "  clean-app    Clean app build only(keeps native)"
 	@echo "  clean-native Clean native build (full rebuild needed)"
 	@echo "  clean-deps   Clean fetched dependencies"
 	@echo "  help         Show this help"

@@ -11,10 +11,13 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.github.mowerick.ros2.android.ui.screens.BuiltInSensorsScreen
 import com.github.mowerick.ros2.android.ui.screens.CameraDetailScreen
-import com.github.mowerick.ros2.android.ui.screens.DomainIdScreen
+import com.github.mowerick.ros2.android.ui.screens.DashboardScreen
+import com.github.mowerick.ros2.android.ui.screens.NodeDetailScreen
+import com.github.mowerick.ros2.android.ui.screens.RosSetupScreen
 import com.github.mowerick.ros2.android.ui.screens.SensorDetailScreen
-import com.github.mowerick.ros2.android.ui.screens.SensorListScreen
+import com.github.mowerick.ros2.android.ui.screens.SubsystemScreen
 import com.github.mowerick.ros2.android.ui.theme.Ros2AndroidTheme
 import com.github.mowerick.ros2.android.viewmodel.RosViewModel
 import com.github.mowerick.ros2.android.viewmodel.Screen
@@ -47,19 +50,35 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(Unit) { vm.loadNetworkInterfaces() }
 
                 val screen by vm.screen.collectAsState()
+                val rosStarted by vm.rosStarted.collectAsState()
+                val rosDomainId by vm.rosDomainId.collectAsState()
                 val sensors by vm.sensors.collectAsState()
                 val cameras by vm.cameras.collectAsState()
                 val reading by vm.currentReading.collectAsState()
                 val networkInterfaces by vm.networkInterfaces.collectAsState()
+                val pipelineNodes by vm.pipelineNodes.collectAsState()
+                val isProbing by vm.isProbing.collectAsState()
 
                 when (val s = screen) {
-                    is Screen.DomainId -> DomainIdScreen(
+                    is Screen.Dashboard -> DashboardScreen(
+                        rosStarted = rosStarted,
+                        rosDomainId = rosDomainId,
+                        sensorCount = sensors.size,
+                        cameraCount = cameras.size,
+                        onSettingsClick = { vm.navigateToRosSetup() },
+                        onBuiltInSensorsClick = { vm.navigateToBuiltInSensors() },
+                        onSubsystemClick = { vm.navigateToSubsystem() }
+                    )
+                    is Screen.RosSetup -> RosSetupScreen(
+                        rosStarted = rosStarted,
                         networkInterfaces = networkInterfaces,
+                        onBack = { vm.navigateBack() },
                         onStartRos = { domainId, iface -> vm.startRos(domainId, iface) }
                     )
-                    is Screen.SensorList -> SensorListScreen(
+                    is Screen.BuiltInSensors -> BuiltInSensorsScreen(
                         sensors = sensors,
                         cameras = cameras,
+                        onBack = { vm.navigateBack() },
                         onSensorClick = { vm.navigateToSensor(it) },
                         onCameraClick = { vm.navigateToCamera(it) },
                         onSensorToggle = { sensor, enable ->
@@ -83,6 +102,21 @@ class MainActivity : ComponentActivity() {
                         onBack = { vm.navigateBack() },
                         onEnable = { vm.enableCamera(s.camera.uniqueId) },
                         onDisable = { vm.disableCamera(s.camera.uniqueId) }
+                    )
+                    is Screen.Subsystem -> SubsystemScreen(
+                        nodes = pipelineNodes,
+                        onBack = { vm.navigateBack() },
+                        onNodeClick = { vm.navigateToNode(it) },
+                        onNodeStartStop = { vm.toggleNodeState(it) },
+                        isNodeStartable = { vm.isNodeStartable(it) },
+                        isProbing = isProbing,
+                        onToggleProbing = { vm.toggleTopicProbing() }
+                    )
+                    is Screen.NodeDetail -> NodeDetailScreen(
+                        node = s.node,
+                        canStart = vm.isNodeStartable(s.node.id),
+                        onBack = { vm.navigateBack() },
+                        onStartStop = { vm.toggleNodeState(s.node.id) }
                     )
                 }
             }

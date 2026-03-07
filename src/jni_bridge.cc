@@ -208,6 +208,24 @@ class AndroidApp {
     }
   }
 
+  std::string GetDiscoveredTopicsJson() {
+    if (!ros_.Initialized()) return "[]";
+    auto node = ros_.get_node();
+    if (!node) return "[]";
+
+    auto topics = node->get_topic_names_and_types();
+    std::ostringstream ss;
+    ss << "[";
+    bool first = true;
+    for (const auto& [name, types] : topics) {
+      if (!first) ss << ",";
+      first = false;
+      ss << "\"" << name << "\"";
+    }
+    ss << "]";
+    return ss.str();
+  }
+
   std::string cache_dir_;
   std::string package_name_;
   ros2_android::RosInterface ros_;
@@ -383,6 +401,14 @@ Java_com_github_mowerick_ros2_android_NativeBridge_nativeGetNetworkInterfaces(
   }
   ss << "]";
   return env->NewStringUTF(ss.str().c_str());
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_github_mowerick_ros2_android_NativeBridge_nativeGetDiscoveredTopics(
+    JNIEnv* env, jobject /*thiz*/) {
+  if (!g_app) return env->NewStringUTF("[]");
+  std::string json = g_app->GetDiscoveredTopicsJson();
+  return env->NewStringUTF(json.c_str());
 }
 
 }  // extern "C"

@@ -4,8 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.mowerick.ros2.android.NativeBridge
 import com.github.mowerick.ros2.android.model.CameraInfo
+import com.github.mowerick.ros2.android.model.NodeState
+import com.github.mowerick.ros2.android.model.PipelineNode
 import com.github.mowerick.ros2.android.model.SensorInfo
 import com.github.mowerick.ros2.android.model.SensorReading
+import com.github.mowerick.ros2.android.model.TopicInfo
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,16 +17,25 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 sealed class Screen {
-    data object DomainId : Screen()
-    data object SensorList : Screen()
+    data object Dashboard : Screen()
+    data object RosSetup : Screen()
+    data object BuiltInSensors : Screen()
+    data object Subsystem : Screen()
     data class SensorDetail(val sensor: SensorInfo) : Screen()
     data class CameraDetail(val camera: CameraInfo) : Screen()
+    data class NodeDetail(val node: PipelineNode) : Screen()
 }
 
 class RosViewModel : ViewModel() {
 
-    private val _screen = MutableStateFlow<Screen>(Screen.DomainId)
+    private val _screen = MutableStateFlow<Screen>(Screen.Dashboard)
     val screen: StateFlow<Screen> = _screen
+
+    private val _rosStarted = MutableStateFlow(false)
+    val rosStarted: StateFlow<Boolean> = _rosStarted
+
+    private val _rosDomainId = MutableStateFlow(-1)
+    val rosDomainId: StateFlow<Int> = _rosDomainId
 
     private val _sensors = MutableStateFlow<List<SensorInfo>>(emptyList())
     val sensors: StateFlow<List<SensorInfo>> = _sensors
@@ -37,7 +49,14 @@ class RosViewModel : ViewModel() {
     private val _networkInterfaces = MutableStateFlow<List<String>>(emptyList())
     val networkInterfaces: StateFlow<List<String>> = _networkInterfaces
 
+    private val _pipelineNodes = MutableStateFlow(createDefaultPipelineNodes())
+    val pipelineNodes: StateFlow<List<PipelineNode>> = _pipelineNodes
+
+    private val _discoveredTopics = MutableStateFlow<Set<String>>(emptySet())
+
     private var polling = false
+    private val _isProbing = MutableStateFlow(false)
+    val isProbing: StateFlow<Boolean> = _isProbing
 
     fun loadNetworkInterfaces() {
         try {
@@ -53,9 +72,28 @@ class RosViewModel : ViewModel() {
 
     fun startRos(domainId: Int, networkInterface: String) {
         NativeBridge.nativeStartRos(domainId, networkInterface)
+        _rosDomainId.value = domainId
+        _rosStarted.value = true
         refreshSensorsAndCameras()
-        _screen.value = Screen.SensorList
+        _screen.value = Screen.Dashboard
     }
+
+    // -- Dashboard navigation --
+
+    fun navigateToRosSetup() {
+        _screen.value = Screen.RosSetup
+    }
+
+    fun navigateToBuiltInSensors() {
+        refreshSensorsAndCameras()
+        _screen.value = Screen.BuiltInSensors
+    }
+
+    fun navigateToSubsystem() {
+        _screen.value = Screen.Subsystem
+    }
+
+    // -- Sensor/Camera navigation --
 
     fun navigateToSensor(sensor: SensorInfo) {
         _currentReading.value = null
@@ -67,19 +105,85 @@ class RosViewModel : ViewModel() {
         _screen.value = Screen.CameraDetail(camera)
     }
 
+    // -- Pipeline node navigation --
+
+    fun navigateToNode(node: PipelineNode) {
+        _screen.value = Screen.NodeDetail(node)
+    }
+
+    fun isNodeStartable(nodeId: String): Boolean {
+        val nodes = _pipelineNodes.value
+        val node = nodes.find { it.id == nodeId } ?: return false
+        if (node.isExternal) return false
+        val upstream = node.upstreamNodeId ?: return true
+        val upstreamNode = nodes.find { it.id == upstream } ?: return false
+        return upstreamNode.state == NodeState.Running
+    }
+
+    fun toggleNodeState(nodeId: String) {
+        val nodes = _pipelineNodes.value
+        val target = nodes.find { it.id == nodeId } ?: return
+        if (target.isExternal) return
+
+        // When stopping a node, also stop all downstream dependents
+        if (target.state == NodeState.Running) {
+            val toStop = mutableSetOf(nodeId)
+            // Iteratively find all downstream nodes
+            var changed = true
+            while (changed) {
+                changed = false
+                for (n in nodes) {
+                    if (n.upstreamNodeId in toStop && n.id !in toStop && !n.isExternal) {
+                        toStop.add(n.id)
+                        changed = true
+                    }
+                }
+            }
+            _pipelineNodes.value = nodes.map { node ->
+                if (node.id in toStop && node.state == NodeState.Running) {
+                    node.copy(state = NodeState.Stopped)
+                } else {
+                    node
+                }
+            }
+        } else {
+            // Only start if upstream is running
+            if (!isNodeStartable(nodeId)) return
+            _pipelineNodes.value = nodes.map { node ->
+                if (node.id == nodeId) node.copy(state = NodeState.Running) else node
+            }
+        }
+
+        // Update NodeDetail screen if currently viewing an affected node
+        val current = _screen.value
+        if (current is Screen.NodeDetail) {
+            val updated = _pipelineNodes.value.find { it.id == current.node.id }
+            if (updated != null) {
+                _screen.value = Screen.NodeDetail(updated)
+            }
+        }
+    }
+
+    // -- Back navigation --
+
     fun navigateBack() {
         stopPolling()
         when (_screen.value) {
             is Screen.SensorDetail, is Screen.CameraDetail -> {
                 refreshSensorsAndCameras()
-                _screen.value = Screen.SensorList
+                _screen.value = Screen.BuiltInSensors
             }
-            is Screen.SensorList -> {
-                _screen.value = Screen.DomainId
+            is Screen.BuiltInSensors, is Screen.Subsystem, is Screen.RosSetup -> {
+                _screen.value = Screen.Dashboard
+            }
+            is Screen.NodeDetail -> {
+                _screen.value = Screen.Subsystem
             }
             else -> {}
         }
     }
+
+    // -- Sensor/Camera enable/disable --
 
     fun enableCamera(uniqueId: String) {
         NativeBridge.nativeEnableCamera(uniqueId)
@@ -104,6 +208,8 @@ class RosViewModel : ViewModel() {
         refreshSensors()
         updateSensorDetailScreen(uniqueId)
     }
+
+    // -- Private helpers --
 
     private fun updateSensorDetailScreen(uniqueId: String) {
         val current = _screen.value
@@ -205,5 +311,139 @@ class RosViewModel : ViewModel() {
     private fun stopPolling() {
         polling = false
         _currentReading.value = null
+    }
+
+    fun toggleTopicProbing() {
+        _isProbing.value = !_isProbing.value
+        if (_isProbing.value) {
+            viewModelScope.launch {
+                while (_isProbing.value) {
+                    try {
+                        val json = NativeBridge.nativeGetDiscoveredTopics()
+                        val arr = JSONArray(json)
+                        val topics = mutableSetOf<String>()
+                        for (i in 0 until arr.length()) {
+                            topics.add(arr.getString(i))
+                        }
+                        _discoveredTopics.value = topics
+                        updateExternalNodeStates(topics)
+                    } catch (_: UnsatisfiedLinkError) {
+                        _isProbing.value = false
+                        return@launch
+                    } catch (_: Exception) {}
+                    delay(2000)
+                }
+            }
+        }
+    }
+
+    private fun updateExternalNodeStates(discoveredTopics: Set<String>) {
+        var changed = false
+        val updated = _pipelineNodes.value.map { node ->
+            if (!node.isExternal) return@map node
+            // External node is "Running" if all its published topics are discovered
+            val allPublished = node.publishesTo.isNotEmpty() &&
+                node.publishesTo.all { it.name in discoveredTopics }
+            val newState = if (allPublished) NodeState.Running else NodeState.Stopped
+            if (newState != node.state) {
+                changed = true
+                node.copy(state = newState)
+            } else {
+                node
+            }
+        }
+        if (changed) {
+            _pipelineNodes.value = updated
+            // If an external node went to Stopped, cascade stop dependents
+            val stoppedExternals = updated.filter { it.isExternal && it.state == NodeState.Stopped }
+            for (ext in stoppedExternals) {
+                cascadeStop(ext.id)
+            }
+            // Refresh NodeDetail if viewing a node
+            val current = _screen.value
+            if (current is Screen.NodeDetail) {
+                val refreshed = _pipelineNodes.value.find { it.id == current.node.id }
+                if (refreshed != null && refreshed != current.node) {
+                    _screen.value = Screen.NodeDetail(refreshed)
+                }
+            }
+        }
+    }
+
+    private fun cascadeStop(parentId: String) {
+        val nodes = _pipelineNodes.value
+        val toStop = mutableSetOf<String>()
+        // Find all downstream nodes dependent on the stopped parent
+        var frontier = setOf(parentId)
+        while (frontier.isNotEmpty()) {
+            val next = mutableSetOf<String>()
+            for (n in nodes) {
+                if (n.upstreamNodeId in frontier && n.id !in toStop && !n.isExternal) {
+                    toStop.add(n.id)
+                    next.add(n.id)
+                }
+            }
+            frontier = next
+        }
+        if (toStop.isNotEmpty()) {
+            _pipelineNodes.value = _pipelineNodes.value.map { node ->
+                if (node.id in toStop && node.state == NodeState.Running) {
+                    node.copy(state = NodeState.Stopped)
+                } else {
+                    node
+                }
+            }
+        }
+    }
+
+    companion object {
+        private fun createDefaultPipelineNodes(): List<PipelineNode> = listOf(
+            PipelineNode(
+                id = "zed_stereo_node",
+                name = "ZED Stereo Node",
+                description = "Captures stereo image data from the ZED camera. Runs on an external NVIDIA Jetson/PC and streams to Android via DDS.",
+                state = NodeState.Stopped,
+                subscribesTo = emptyList(),
+                publishesTo = listOf(
+                    TopicInfo("/stereo_image_data", "sensor_msgs/msg/Image")
+                ),
+                upstreamNodeId = null,
+                isExternal = true
+            ),
+            PipelineNode(
+                id = "yolo_obj_detect",
+                name = "YOLO Object Detection",
+                description = "Subscribes to stereo image data and runs YOLO object detection to identify objects in 3D space.",
+                subscribesTo = listOf(
+                    TopicInfo("/stereo_image_data", "sensor_msgs/msg/Image")
+                ),
+                publishesTo = listOf(
+                    TopicInfo("/object_xyz_pos", "geometry_msgs/msg/PointStamped")
+                ),
+                upstreamNodeId = "zed_stereo_node"
+            ),
+            PipelineNode(
+                id = "laser_positioning",
+                name = "Laser Positioning",
+                description = "Consumes detected object coordinates and determines the required positioning and targeting for actuation.",
+                subscribesTo = listOf(
+                    TopicInfo("/object_xyz_pos", "geometry_msgs/msg/PointStamped")
+                ),
+                publishesTo = listOf(
+                    TopicInfo("/stepper_steps", "std_msgs/msg/Int32MultiArray")
+                ),
+                upstreamNodeId = "yolo_obj_detect"
+            ),
+            PipelineNode(
+                id = "micro_ros_agent",
+                name = "micro-ROS Agent",
+                description = "Mediates communication between the ROS 2 network and the microcontroller via Serial/DDS bridge.",
+                subscribesTo = listOf(
+                    TopicInfo("/stepper_steps", "std_msgs/msg/Int32MultiArray")
+                ),
+                publishesTo = emptyList(),
+                upstreamNodeId = "laser_positioning"
+            )
+        )
     }
 }

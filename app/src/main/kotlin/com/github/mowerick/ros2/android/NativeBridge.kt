@@ -19,4 +19,5 @@ object NativeBridge {
     external fun nativeEnableSensor(uniqueId: String)
     external fun nativeDisableSensor(uniqueId: String)
     external fun nativeGetNetworkInterfaces(): String
+    external fun nativeGetDiscoveredTopics(): String
 }
