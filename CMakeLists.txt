@@ -7,6 +7,9 @@ include(ExternalProject)
 set(minimum_target_sdk 33)
 
 if(NOT ANDROID_HOME)
+  set(ANDROID_HOME "$ENV{ANDROID_HOME}")
+endif()
+if(NOT ANDROID_HOME)
   message(FATAL_ERROR "ANDROID_HOME must be given")
 endif()
 
