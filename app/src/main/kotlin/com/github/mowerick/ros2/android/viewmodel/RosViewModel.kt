@@ -1,5 +1,6 @@
 package com.github.mowerick.ros2.android.viewmodel
 
+import android.graphics.Bitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.mowerick.ros2.android.NativeBridge
@@ -9,6 +10,7 @@ import com.github.mowerick.ros2.android.model.PipelineNode
 import com.github.mowerick.ros2.android.model.SensorInfo
 import com.github.mowerick.ros2.android.model.SensorReading
 import com.github.mowerick.ros2.android.model.TopicInfo
+import java.net.NetworkInterface
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -54,7 +56,11 @@ class RosViewModel : ViewModel() {
 
     private val _discoveredTopics = MutableStateFlow<Set<String>>(emptySet())
 
+    private val _cameraFrame = MutableStateFlow<Bitmap?>(null)
+    val cameraFrame: StateFlow<Bitmap?> = _cameraFrame
+
     private var polling = false
+    private var cameraPreviewPolling = false
     private val _isProbing = MutableStateFlow(false)
     val isProbing: StateFlow<Boolean> = _isProbing
 
@@ -68,6 +74,22 @@ class RosViewModel : ViewModel() {
             }
             _networkInterfaces.value = ifaces
         } catch (_: Exception) {}
+    }
+
+    fun refreshNetworkInterfaces() {
+        try {
+            val ifaces = NetworkInterface.getNetworkInterfaces()
+                ?.toList()
+                ?.map { it.name }
+                ?.toTypedArray()
+                ?: emptyArray()
+            NativeBridge.nativeSetNetworkInterfaces(ifaces)
+            loadNetworkInterfaces()
+        } catch (_: Exception) {}
+    }
+
+    fun setDomainId(id: Int) {
+        _rosDomainId.value = id
     }
 
     fun startRos(domainId: Int, networkInterface: String) {
@@ -103,6 +125,9 @@ class RosViewModel : ViewModel() {
 
     fun navigateToCamera(camera: CameraInfo) {
         _screen.value = Screen.CameraDetail(camera)
+        if (camera.enabled) {
+            startCameraPreview(camera.uniqueId)
+        }
     }
 
     // -- Pipeline node navigation --
@@ -168,6 +193,7 @@ class RosViewModel : ViewModel() {
 
     fun navigateBack() {
         stopPolling()
+        stopCameraPreview()
         when (_screen.value) {
             is Screen.SensorDetail, is Screen.CameraDetail -> {
                 refreshSensorsAndCameras()
@@ -189,9 +215,11 @@ class RosViewModel : ViewModel() {
         NativeBridge.nativeEnableCamera(uniqueId)
         refreshCameras()
         updateCameraDetailScreen(uniqueId)
+        startCameraPreview(uniqueId)
     }
 
     fun disableCamera(uniqueId: String) {
+        stopCameraPreview()
         NativeBridge.nativeDisableCamera(uniqueId)
         refreshCameras()
         updateCameraDetailScreen(uniqueId)
@@ -276,7 +304,9 @@ class RosViewModel : ViewModel() {
                         infoTopicName = obj.getString("infoTopicName"),
                         infoTopicType = obj.getString("infoTopicType"),
                         resolutionWidth = obj.getInt("resolutionWidth"),
-                        resolutionHeight = obj.getInt("resolutionHeight")
+                        resolutionHeight = obj.getInt("resolutionHeight"),
+                        isFrontFacing = obj.optBoolean("isFrontFacing", false),
+                        sensorOrientation = obj.optInt("sensorOrientation", 0)
                     )
                 )
             }
@@ -311,6 +341,48 @@ class RosViewModel : ViewModel() {
     private fun stopPolling() {
         polling = false
         _currentReading.value = null
+    }
+
+    private fun startCameraPreview(uniqueId: String) {
+        cameraPreviewPolling = true
+        viewModelScope.launch {
+            while (cameraPreviewPolling) {
+                try {
+                    val bytes = NativeBridge.nativeGetCameraFrame(uniqueId)
+                    if (bytes != null && bytes.size > 8) {
+                        val width = ((bytes[0].toInt() and 0xFF) shl 24) or
+                            ((bytes[1].toInt() and 0xFF) shl 16) or
+                            ((bytes[2].toInt() and 0xFF) shl 8) or
+                            (bytes[3].toInt() and 0xFF)
+                        val height = ((bytes[4].toInt() and 0xFF) shl 24) or
+                            ((bytes[5].toInt() and 0xFF) shl 16) or
+                            ((bytes[6].toInt() and 0xFF) shl 8) or
+                            (bytes[7].toInt() and 0xFF)
+                        val pixelCount = width * height
+                        val expectedSize = 8 + pixelCount * 3
+                        if (bytes.size >= expectedSize && width > 0 && height > 0) {
+                            val pixels = IntArray(pixelCount)
+                            for (i in 0 until pixelCount) {
+                                val offset = 8 + i * 3
+                                val r = bytes[offset].toInt() and 0xFF
+                                val g = bytes[offset + 1].toInt() and 0xFF
+                                val b = bytes[offset + 2].toInt() and 0xFF
+                                pixels[i] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
+                            }
+                            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                            bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
+                            _cameraFrame.value = bitmap
+                        }
+                    }
+                } catch (_: Exception) {}
+                delay(100)
+            }
+        }
+    }
+
+    private fun stopCameraPreview() {
+        cameraPreviewPolling = false
+        _cameraFrame.value = null
     }
 
     fun toggleTopicProbing() {

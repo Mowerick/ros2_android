@@ -9,5 +9,7 @@ data class CameraInfo(
     val infoTopicName: String,
     val infoTopicType: String,
     val resolutionWidth: Int,
-    val resolutionHeight: Int
+    val resolutionHeight: Int,
+    val isFrontFacing: Boolean,
+    val sensorOrientation: Int
 )

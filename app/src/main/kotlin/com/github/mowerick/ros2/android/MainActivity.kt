@@ -58,6 +58,7 @@ class MainActivity : ComponentActivity() {
                 val networkInterfaces by vm.networkInterfaces.collectAsState()
                 val pipelineNodes by vm.pipelineNodes.collectAsState()
                 val isProbing by vm.isProbing.collectAsState()
+                val cameraFrame by vm.cameraFrame.collectAsState()
 
                 when (val s = screen) {
                     is Screen.Dashboard -> DashboardScreen(
@@ -72,8 +73,11 @@ class MainActivity : ComponentActivity() {
                     is Screen.RosSetup -> RosSetupScreen(
                         rosStarted = rosStarted,
                         networkInterfaces = networkInterfaces,
+                        rosDomainId = rosDomainId,
                         onBack = { vm.navigateBack() },
-                        onStartRos = { domainId, iface -> vm.startRos(domainId, iface) }
+                        onStartRos = { domainId, iface -> vm.startRos(domainId, iface) },
+                        onRefreshInterfaces = { vm.refreshNetworkInterfaces() },
+                        onDomainIdChanged = { vm.setDomainId(it) }
                     )
                     is Screen.BuiltInSensors -> BuiltInSensorsScreen(
                         sensors = sensors,
@@ -99,6 +103,7 @@ class MainActivity : ComponentActivity() {
                     )
                     is Screen.CameraDetail -> CameraDetailScreen(
                         camera = s.camera,
+                        cameraFrame = cameraFrame,
                         onBack = { vm.navigateBack() },
                         onEnable = { vm.enableCamera(s.camera.uniqueId) },
                         onDisable = { vm.disableCamera(s.camera.uniqueId) }

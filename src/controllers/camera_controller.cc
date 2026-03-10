@@ -15,11 +15,8 @@ CameraController::CameraController(CameraManager* camera_manager,
       SensorDataProvider(camera_descriptor.GetName()),
       info_pub_(ros),
       image_pub_(ros) {
-  std::stringstream base_topic;
-  base_topic << "camera/id_" << camera_descriptor_.id << "/";
-
-  std::string info_topic = base_topic.str() + "camera_info";
-  std::string image_topic = base_topic.str() + "image_color";
+  std::string info_topic = camera_descriptor_.topic_prefix + "camera_info";
+  std::string image_topic = camera_descriptor_.topic_prefix + "image_color";
 
   info_pub_.SetTopic(info_topic.c_str());
   image_pub_.SetTopic(image_topic.c_str());
@@ -29,9 +26,14 @@ CameraController::CameraController(CameraManager* camera_manager,
 CameraController::~CameraController() {}
 
 void CameraController::EnableCamera() {
+  device_ = camera_manager_->OpenCamera(camera_descriptor_);
+  if (!device_) {
+    LOGW("Failed to enable camera %s - could not open device (already in use?)",
+         camera_descriptor_.display_name.c_str());
+    return;
+  }
   image_pub_.Enable();
   info_pub_.Enable();
-  device_ = camera_manager_->OpenCamera(camera_descriptor_);
   device_->SetListener(
       std::bind(&CameraController::OnImage, this, std::placeholders::_1));
 }
@@ -40,10 +42,16 @@ void CameraController::DisableCamera() {
   image_pub_.Disable();
   info_pub_.Disable();
   device_.reset();
+  {
+    std::lock_guard<std::mutex> lock(frame_mutex_);
+    last_frame_.clear();
+    frame_width_ = 0;
+    frame_height_ = 0;
+  }
 }
 
 std::string CameraController::PrettyName() const {
-  std::string name{camera_descriptor_.GetName()};
+  std::string name{camera_descriptor_.display_name};
   if (!device_) {
     name += " [disabled]";
   }
@@ -67,4 +75,21 @@ void CameraController::OnImage(
   LOGI("Controller has image?");
   info_pub_.Publish(*info_image.first.get());
   image_pub_.Publish(*info_image.second.get());
+
+  {
+    std::lock_guard<std::mutex> lock(frame_mutex_);
+    last_frame_ = info_image.second->data;
+    frame_width_ = info_image.second->width;
+    frame_height_ = info_image.second->height;
+  }
+}
+
+bool CameraController::GetLastFrame(std::vector<uint8_t>& out_data,
+                                    int& out_width, int& out_height) {
+  std::lock_guard<std::mutex> lock(frame_mutex_);
+  if (last_frame_.empty()) return false;
+  out_data = last_frame_;
+  out_width = frame_width_;
+  out_height = frame_height_;
+  return true;
 }

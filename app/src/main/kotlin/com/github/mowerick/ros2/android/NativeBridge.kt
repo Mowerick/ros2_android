@@ -20,4 +20,5 @@ object NativeBridge {
     external fun nativeDisableSensor(uniqueId: String)
     external fun nativeGetNetworkInterfaces(): String
     external fun nativeGetDiscoveredTopics(): String
+    external fun nativeGetCameraFrame(uniqueId: String): ByteArray?
 }

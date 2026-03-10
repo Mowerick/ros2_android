@@ -1,5 +1,7 @@
 package com.github.mowerick.ros2.android.ui.screens
 
+import android.graphics.Bitmap
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,7 +21,11 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import com.github.mowerick.ros2.android.model.CameraInfo
 import com.github.mowerick.ros2.android.ui.components.TopicInfoCard
@@ -28,6 +34,7 @@ import com.github.mowerick.ros2.android.ui.components.TopicInfoCard
 @Composable
 fun CameraDetailScreen(
     camera: CameraInfo,
+    cameraFrame: Bitmap?,
     onBack: () -> Unit,
     onEnable: () -> Unit,
     onDisable: () -> Unit
@@ -64,6 +71,37 @@ fun CameraDetailScreen(
                     modifier = Modifier.fillMaxWidth().height(48.dp)
                 ) {
                     Text("Enable Camera")
+                }
+            }
+
+            if (camera.enabled) {
+                val isRotated = camera.sensorOrientation == 90 || camera.sensorOrientation == 270
+                val frameW = if (isRotated) cameraFrame?.height ?: camera.resolutionHeight
+                             else cameraFrame?.width ?: camera.resolutionWidth
+                val frameH = if (isRotated) cameraFrame?.width ?: camera.resolutionWidth
+                             else cameraFrame?.height ?: camera.resolutionHeight
+                val ratio = if (frameW > 0 && frameH > 0) frameW.toFloat() / frameH.toFloat()
+                            else 3f / 4f
+
+                if (cameraFrame != null) {
+                    Image(
+                        bitmap = cameraFrame.asImageBitmap(),
+                        contentDescription = "Camera preview",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .graphicsLayer {
+                                rotationZ = camera.sensorOrientation.toFloat()
+                                if (camera.isFrontFacing) scaleY = -1f
+                            },
+                        contentScale = ContentScale.Fit
+                    )
+                } else {
+                    Text(
+                        text = "Waiting for camera frame...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f)
+                    )
                 }
             }
 

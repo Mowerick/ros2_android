@@ -39,7 +39,7 @@ fun DashboardScreen(
     onBuiltInSensorsClick: () -> Unit,
     onSubsystemClick: () -> Unit
 ) {
-    val titleText = if (rosStarted) "Dashboard (ID: $rosDomainId)" else "Dashboard (ID: --)"
+    val titleText = if (rosDomainId >= 0) "Dashboard (ID: $rosDomainId)" else "Dashboard (ID: --)"
 
     Scaffold(
         topBar = {

@@ -2,6 +2,7 @@ package com.github.mowerick.ros2.android.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -10,6 +11,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenuItem
@@ -26,7 +28,6 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -40,10 +41,12 @@ import com.github.mowerick.ros2.android.ui.components.NumericKeypad
 fun RosSetupScreen(
     rosStarted: Boolean,
     networkInterfaces: List<String>,
+    rosDomainId: Int,
     onBack: () -> Unit,
-    onStartRos: (domainId: Int, networkInterface: String) -> Unit
+    onStartRos: (domainId: Int, networkInterface: String) -> Unit,
+    onRefreshInterfaces: () -> Unit = {},
+    onDomainIdChanged: (Int) -> Unit,
 ) {
-    var domainId by remember { mutableIntStateOf(-1) }
     var selectedInterface by remember(networkInterfaces) {
         mutableStateOf(
             networkInterfaces.firstOrNull { it.startsWith("wlan") }
@@ -79,7 +82,7 @@ fun RosSetupScreen(
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text("Status", style = MaterialTheme.typography.titleSmall)
                         Text(
-                            text = "ROS 2 is running",
+                            text = "ROS 2 is running with Domain ID $rosDomainId",
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(top = 4.dp)
@@ -96,28 +99,38 @@ fun RosSetupScreen(
                 ) {
                     Text("ROS Domain ID", style = MaterialTheme.typography.titleSmall)
                     Text(
-                        text = if (domainId < 0) "---" else domainId.toString(),
+                        text = if (rosDomainId < 0) "---" else rosDomainId.toString(),
                         style = MaterialTheme.typography.headlineMedium,
                         modifier = Modifier.align(Alignment.CenterHorizontally)
                     )
                     NumericKeypad(
-                        currentValue = domainId,
+                        currentValue = rosDomainId,
                         onDigit = { digit ->
-                            domainId = if (domainId < 0) digit else domainId * 10 + digit
+                            val newId = if (rosDomainId < 0) digit else rosDomainId * 10 + digit
+                            onDomainIdChanged(newId)
                         },
-                        onClear = { domainId = -1 }
+                        onClear = { onDomainIdChanged(-1) }
                     )
                 }
             }
 
             // Network interface section
-            if (networkInterfaces.isNotEmpty()) {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text("Network Interface", style = MaterialTheme.typography.titleSmall)
+                        IconButton(onClick = onRefreshInterfaces) {
+                            Icon(Icons.Filled.Refresh, contentDescription = "Refresh interfaces")
+                        }
+                    }
+                    if (networkInterfaces.isNotEmpty()) {
                         ExposedDropdownMenuBox(
                             expanded = dropdownExpanded,
                             onExpandedChange = { dropdownExpanded = it }
@@ -146,6 +159,12 @@ fun RosSetupScreen(
                                 }
                             }
                         }
+                    } else {
+                        Text(
+                            text = "No interfaces found. Connect to Wi-Fi and tap refresh.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
@@ -153,8 +172,8 @@ fun RosSetupScreen(
             // Start button
             if (rosStarted) {
                 OutlinedButton(
-                    onClick = { onStartRos(domainId, selectedInterface) },
-                    enabled = domainId >= 0,
+                    onClick = { onStartRos(rosDomainId, selectedInterface) },
+                    enabled = rosDomainId >= 0,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp)
@@ -163,8 +182,8 @@ fun RosSetupScreen(
                 }
             } else {
                 Button(
-                    onClick = { onStartRos(domainId, selectedInterface) },
-                    enabled = domainId >= 0,
+                    onClick = { onStartRos(rosDomainId, selectedInterface) },
+                    enabled = rosDomainId >= 0,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp)

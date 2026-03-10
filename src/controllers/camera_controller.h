@@ -1,6 +1,9 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
+#include <mutex>
+#include <vector>
 
 #include "camera_device.h"
 #include "camera_manager.h"
@@ -29,7 +32,11 @@ class CameraController : public SensorDataProvider {
   const char* ImageTopicType() const { return image_pub_.Type(); }
   const char* InfoTopicName() const { return info_pub_.Topic(); }
   const char* InfoTopicType() const { return info_pub_.Type(); }
-  std::string GetCameraName() const { return camera_descriptor_.GetName(); }
+  std::string GetCameraName() const { return camera_descriptor_.display_name; }
+  bool IsFrontFacing() const {
+    return camera_descriptor_.lens_facing == ACAMERA_LENS_FACING_FRONT;
+  }
+  int SensorOrientation() const { return camera_descriptor_.sensor_orientation; }
 
   std::tuple<int, int> GetResolution() const {
     if (device_) {
@@ -37,6 +44,9 @@ class CameraController : public SensorDataProvider {
     }
     return {0, 0};
   }
+
+  bool GetLastFrame(std::vector<uint8_t>& out_data, int& out_width,
+                    int& out_height);
 
  protected:
   void OnImage(
@@ -48,6 +58,11 @@ class CameraController : public SensorDataProvider {
   std::unique_ptr<CameraDevice> device_;
   Publisher<sensor_msgs::msg::CameraInfo> info_pub_;
   Publisher<sensor_msgs::msg::Image> image_pub_;
+
+  std::mutex frame_mutex_;
+  std::vector<uint8_t> last_frame_;
+  int frame_width_ = 0;
+  int frame_height_ = 0;
 };
 
 }  // namespace ros2_android

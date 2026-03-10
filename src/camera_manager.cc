@@ -123,6 +123,17 @@ void CameraManager::DiscoverCameras() {
     cam_desc.is_logical_multi_camera =
         logical_multi_camera_ids.count(cam_id) > 0;
 
+    // Read sensor orientation (clockwise degrees to match device portrait)
+    ACameraMetadata_const_entry orient_entry = {0};
+    status = ACameraMetadata_getConstEntry(metadata.get(),
+                                           ACAMERA_SENSOR_ORIENTATION,
+                                           &orient_entry);
+    if (ACAMERA_OK == status && orient_entry.count > 0) {
+      cam_desc.sensor_orientation = orient_entry.data.i32[0];
+      LOGI("Camera %s sensor orientation: %d", cam_id.c_str(),
+           cam_desc.sensor_orientation);
+    }
+
     LOGI("Looking up available stream configurations");
     // Figure out what kinds of data we can get from the camera
     ACameraMetadata_getConstEntry(
@@ -174,8 +185,47 @@ void CameraManager::DiscoverCameras() {
 
   cameras_.clear();
   for (auto& [facing, cam] : best_per_facing) {
-    LOGI("Selected camera: %s", cam.GetName().c_str());
     cameras_.push_back(std::move(cam));
+  }
+
+  // Build display names: count cameras per facing direction first
+  std::map<acamera_metadata_enum_acamera_lens_facing, int> facing_counts;
+  for (const auto& cam : cameras_) {
+    facing_counts[cam.lens_facing]++;
+  }
+
+  std::map<acamera_metadata_enum_acamera_lens_facing, int> facing_index;
+  for (auto& cam : cameras_) {
+    std::string label;
+    std::string topic_slug;
+    switch (cam.lens_facing) {
+      case ACAMERA_LENS_FACING_FRONT:
+        label = "Front Camera";
+        topic_slug = "front";
+        break;
+      case ACAMERA_LENS_FACING_BACK:
+        label = "Back Camera";
+        topic_slug = "back";
+        break;
+      case ACAMERA_LENS_FACING_EXTERNAL:
+        label = "External Camera";
+        topic_slug = "external";
+        break;
+      default:
+        label = "Camera";
+        topic_slug = "camera_" + cam.id;
+        break;
+    }
+    int count = facing_counts[cam.lens_facing];
+    if (count > 1) {
+      int idx = ++facing_index[cam.lens_facing];
+      label += " " + std::to_string(idx);
+      topic_slug += "_" + std::to_string(idx);
+    }
+    cam.display_name = label;
+    cam.topic_prefix = "camera/" + topic_slug + "/";
+    LOGI("Selected camera: %s (topics: %s)", cam.display_name.c_str(),
+         cam.topic_prefix.c_str());
   }
 }
 

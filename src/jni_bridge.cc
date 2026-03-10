@@ -166,10 +166,24 @@ class AndroidApp {
          << ",\"infoTopicName\":\"" << c->InfoTopicName() << "\""
          << ",\"infoTopicType\":\"" << c->InfoTopicType() << "\""
          << ",\"resolutionWidth\":" << width
-         << ",\"resolutionHeight\":" << height << "}";
+         << ",\"resolutionHeight\":" << height
+         << ",\"isFrontFacing\":" << (c->IsFrontFacing() ? "true" : "false")
+         << ",\"sensorOrientation\":" << c->SensorOrientation()
+         << "}";
     }
     ss << "]";
     return ss.str();
+  }
+
+  bool GetCameraFrameBytes(const std::string& unique_id,
+                           std::vector<uint8_t>& out_data, int& out_width,
+                           int& out_height) {
+    for (auto& c : camera_controllers_) {
+      if (unique_id == c->UniqueId()) {
+        return c->GetLastFrame(out_data, out_width, out_height);
+      }
+    }
+    return false;
   }
 
   void EnableCamera(const std::string& unique_id) {
@@ -409,6 +423,41 @@ Java_com_github_mowerick_ros2_android_NativeBridge_nativeGetDiscoveredTopics(
   if (!g_app) return env->NewStringUTF("[]");
   std::string json = g_app->GetDiscoveredTopicsJson();
   return env->NewStringUTF(json.c_str());
+}
+
+JNIEXPORT jbyteArray JNICALL
+Java_com_github_mowerick_ros2_android_NativeBridge_nativeGetCameraFrame(
+    JNIEnv* env, jobject /*thiz*/, jstring unique_id) {
+  if (!g_app) return nullptr;
+
+  const char* id = env->GetStringUTFChars(unique_id, nullptr);
+  std::vector<uint8_t> data;
+  int width = 0, height = 0;
+  bool ok = g_app->GetCameraFrameBytes(std::string(id), data, width, height);
+  env->ReleaseStringUTFChars(unique_id, id);
+
+  if (!ok || data.empty()) return nullptr;
+
+  size_t total = 8 + data.size();
+  jbyteArray result = env->NewByteArray(static_cast<jsize>(total));
+  if (!result) return nullptr;
+
+  // Prepend width and height as 2x int32 big-endian (8 bytes header)
+  uint8_t header[8];
+  header[0] = (width >> 24) & 0xFF;
+  header[1] = (width >> 16) & 0xFF;
+  header[2] = (width >> 8) & 0xFF;
+  header[3] = width & 0xFF;
+  header[4] = (height >> 24) & 0xFF;
+  header[5] = (height >> 16) & 0xFF;
+  header[6] = (height >> 8) & 0xFF;
+  header[7] = height & 0xFF;
+
+  env->SetByteArrayRegion(result, 0, 8,
+                          reinterpret_cast<const jbyte*>(header));
+  env->SetByteArrayRegion(result, 8, static_cast<jsize>(data.size()),
+                          reinterpret_cast<const jbyte*>(data.data()));
+  return result;
 }
 
 }  // extern "C"
