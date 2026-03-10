@@ -3,9 +3,12 @@
 #include <sstream>
 
 #include "log.h"
+#include "notification_queue.h"
 
 using ros2_android::CameraController;
 using ros2_android::CameraDevice;
+using ros2_android::NotificationSeverity;
+using ros2_android::PostNotification;
 
 CameraController::CameraController(CameraManager* camera_manager,
                                    const CameraDescriptor& camera_descriptor,
@@ -30,6 +33,10 @@ void CameraController::EnableCamera() {
   if (!device_) {
     LOGW("Failed to enable camera %s - could not open device (already in use?)",
          camera_descriptor_.display_name.c_str());
+    PostNotification(
+        NotificationSeverity::WARNING,
+        "Failed to enable " + camera_descriptor_.display_name +
+            " - could not open device (already in use?)");
     return;
   }
   image_pub_.Enable();
@@ -72,9 +79,13 @@ std::string CameraController::GetLastMeasurementJson() {
 
 void CameraController::OnImage(
     const std::pair<CameraInfo::UniquePtr, Image::UniquePtr>& info_image) {
-  LOGI("Controller has image?");
+  LOGI("Controller::OnImage - received image %dx%d",
+       info_image.second->width, info_image.second->height);
+  LOGI("Publisher enabled: info=%d image=%d",
+       info_pub_.Enabled(), image_pub_.Enabled());
   info_pub_.Publish(*info_image.first.get());
   image_pub_.Publish(*info_image.second.get());
+  LOGI("Published camera data");
 
   {
     std::lock_guard<std::mutex> lock(frame_mutex_);

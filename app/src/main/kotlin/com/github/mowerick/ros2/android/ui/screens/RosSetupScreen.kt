@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -26,6 +27,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
+import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -44,6 +46,7 @@ fun RosSetupScreen(
     rosDomainId: Int,
     onBack: () -> Unit,
     onStartRos: (domainId: Int, networkInterface: String) -> Unit,
+    onStopRos: () -> Unit = {},
     onRefreshInterfaces: () -> Unit = {},
     onDomainIdChanged: (Int) -> Unit,
 ) {
@@ -74,28 +77,34 @@ fun RosSetupScreen(
                 .padding(padding)
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Status card
-            if (rosStarted) {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Status", style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            text = "ROS 2 is running with Domain ID $rosDomainId",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
-                    }
+            // Status card (always shown)
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text("Status", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        text = if (rosStarted) {
+                            "ROS 2 is running with Domain ID $rosDomainId"
+                        } else {
+                            "ROS not running"
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (rosStarted) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
                 }
             }
 
             // Domain ID section
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text("ROS Domain ID", style = MaterialTheme.typography.titleSmall)
                     Text(
@@ -117,8 +126,8 @@ fun RosSetupScreen(
             // Network interface section
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -162,14 +171,14 @@ fun RosSetupScreen(
                     } else {
                         Text(
                             text = "No interfaces found. Connect to Wi-Fi and tap refresh.",
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
             }
 
-            // Start button
+            // Start/Restart button
             if (rosStarted) {
                 OutlinedButton(
                     onClick = { onStartRos(rosDomainId, selectedInterface) },
@@ -190,6 +199,23 @@ fun RosSetupScreen(
                 ) {
                     Text("Start ROS", style = MaterialTheme.typography.titleMedium)
                 }
+            }
+
+            // Stop button
+            Button(
+                onClick = onStopRos,
+                enabled = rosStarted,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.Red,
+                    contentColor = Color.White,
+                    disabledContainerColor = Color.Red.copy(alpha = 0.3f),
+                    disabledContentColor = Color.White.copy(alpha = 0.5f)
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+            ) {
+                Text("Stop ROS", style = MaterialTheme.typography.titleMedium)
             }
         }
     }

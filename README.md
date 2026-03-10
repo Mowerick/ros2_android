@@ -42,12 +42,14 @@ The native layer cross-compiles ~70 ROS 2 Humble packages via a CMake superbuild
 ## How to Build
 
 You do not need ROS installed on your machine to build the app.
-However, ROS 2 Humble is needed on a companion machine to interact with the published topics.
-Follow [these instructions to install ROS Humble](https://docs.ros.org/en/humble/Installation.html).
+
+> [!NOTE]
+> ROS 2 Humble is needed on a companion machine or on your device to use the scripts under `scripts/` to interact with the published topics. Follow [these instructions to install ROS Humble](https://docs.ros.org/en/humble/Installation.html).
 
 ### Dependencies
 
 **Android SDK Components:**
+
 - Android SDK Command-line Tools (version 8.0)
 - Platform Tools (version 35.0.2)
 - Build Tools (version 33.0.2 and 34.0.0)
@@ -56,6 +58,7 @@ Follow [these instructions to install ROS Humble](https://docs.ros.org/en/humble
 - CMake 3.22.1
 
 **Build Tools:**
+
 - JDK 21 (for Gradle and keytool)
 - Gradle (downloaded automatically by the wrapper)
 - make
@@ -64,6 +67,7 @@ Follow [these instructions to install ROS Humble](https://docs.ros.org/en/humble
 - adb (Android Debug Bridge)
 
 **Python Packages:**
+
 - catkin-pkg (ROS 2 build dependency)
 - empy 3.x (ROS 2 requires 3.x, not 4.x)
 - lark-parser
@@ -71,6 +75,7 @@ Follow [these instructions to install ROS Humble](https://docs.ros.org/en/humble
 - setuptools
 
 **ROS 2 Tools:**
+
 - vcstool (for managing ROS 2 package repositories)
 
 ### Computer Setup
@@ -120,7 +125,7 @@ echo "sdk.dir=$HOME/android-sdk" > local.properties
 ```
 
 You may need to do additional setup to use adb.
-Follow the [Set up a device for development](https://developer.android.com/studio/run/device#setting-up) instructions if you're using Ubuntu, or follow [the instructions in this thread](https://forums.fedoraforum.org/showthread.php?298965-HowTo-set-up-adb-(Android-Debug-Bridge)-on-Fedora-20) if you're using Fedora.
+Follow the [Set up a device for development](https://developer.android.com/studio/run/device#setting-up) instructions if you're using Ubuntu, or follow [the instructions in this thread](<https://forums.fedoraforum.org/showthread.php?298965-HowTo-set-up-adb-(Android-Debug-Bridge)-on-Fedora-20>) if you're using Fedora.
 
 ### Create Debug Keys
 
@@ -230,6 +235,54 @@ Grant a permission without the request dialog (app must be installed but not run
 ```bash
 adb shell pm grant com.github.mowerick.ros2.android android.permission.CAMERA
 ```
+
+### ROS 2 Topic Inspection
+
+The app publishes ROS 2 topics that can be discovered and inspected from a companion machine on the same network.
+
+**Required environment setup:**
+
+```bash
+export CYCLONEDDS_URI=file://<path_to_project>/scripts/cyclonedds.xml
+export ROS_DOMAIN_ID=1
+```
+
+Replace `<path_to_project>` with the absolute path to this repository (e.g., `/home/user/ros2_android`).
+
+**Common commands:**
+
+List all topics:
+```bash
+ros2 topic list
+```
+
+Show topic info (includes QoS settings):
+```bash
+ros2 topic info /camera/front/image_color -v
+```
+
+Echo camera info (lightweight):
+```bash
+ros2 topic echo /camera/front/camera_info
+```
+
+Echo camera images (high bandwidth):
+```bash
+ros2 topic echo /camera/front/image_color --qos-reliability best_effort
+```
+
+Check message rate:
+```bash
+ros2 topic hz /camera/front/image_color
+```
+
+**Network requirements:**
+
+- Android device and companion machine must be on the same network
+- Cyclone DDS uses UDP multicast for discovery (port 7650 for domain 1)
+- Cyclone DDS uses UDP unicast for data (dynamic port range 7410-7900)
+- Firewall must allow incoming UDP traffic on these ports
+- The `cyclonedds.xml` config specifies which network interface to use (default: `enp39s0`)
 
 ## Documentation
 

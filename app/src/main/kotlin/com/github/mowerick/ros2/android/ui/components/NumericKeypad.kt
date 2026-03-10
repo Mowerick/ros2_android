@@ -20,7 +20,7 @@ fun NumericKeypad(
     onClear: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val buttonHeight = 56.dp
+    val buttonHeight = 48.dp
 
     fun isDigitAllowed(digit: Int): Boolean {
         val nextValue = if (currentValue < 0) digit else currentValue * 10 + digit
@@ -42,7 +42,7 @@ fun NumericKeypad(
                     enabled = isDigitAllowed(digit),
                     modifier = Modifier.weight(1f).height(buttonHeight)
                 ) {
-                    Text(digit.toString(), fontSize = 20.sp)
+                    Text(digit.toString(), fontSize = 18.sp)
                 }
             }
         }
@@ -57,7 +57,7 @@ fun NumericKeypad(
                     enabled = isDigitAllowed(digit),
                     modifier = Modifier.weight(1f).height(buttonHeight)
                 ) {
-                    Text(digit.toString(), fontSize = 20.sp)
+                    Text(digit.toString(), fontSize = 18.sp)
                 }
             }
         }
@@ -72,7 +72,7 @@ fun NumericKeypad(
                     enabled = isDigitAllowed(digit),
                     modifier = Modifier.weight(1f).height(buttonHeight)
                 ) {
-                    Text(digit.toString(), fontSize = 20.sp)
+                    Text(digit.toString(), fontSize = 18.sp)
                 }
             }
         }
@@ -86,13 +86,13 @@ fun NumericKeypad(
                 enabled = isDigitAllowed(0),
                 modifier = Modifier.weight(1f).height(buttonHeight)
             ) {
-                Text("0", fontSize = 20.sp)
+                Text("0", fontSize = 18.sp)
             }
             OutlinedButton(
                 onClick = onClear,
                 modifier = Modifier.weight(2f).height(buttonHeight)
             ) {
-                Text("Clear", fontSize = 20.sp)
+                Text("Clear", fontSize = 18.sp)
             }
         }
     }

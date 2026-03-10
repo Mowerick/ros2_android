@@ -11,6 +11,7 @@ object NativeBridge {
     external fun nativeOnPermissionResult(permission: String, granted: Boolean)
 
     external fun nativeStartRos(domainId: Int, networkInterface: String)
+    external fun nativeStopRos()
     external fun nativeGetSensorList(): String
     external fun nativeGetSensorData(uniqueId: String): String
     external fun nativeGetCameraList(): String
@@ -21,4 +22,5 @@ object NativeBridge {
     external fun nativeGetNetworkInterfaces(): String
     external fun nativeGetDiscoveredTopics(): String
     external fun nativeGetCameraFrame(uniqueId: String): ByteArray?
+    external fun nativeGetPendingNotifications(): String
 }

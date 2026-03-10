@@ -128,6 +128,9 @@ class Publisher {
   void Publish(const MsgT& msg) const {
     if (publisher_) {
       publisher_->publish(msg);
+      LOGI("Published message to %s", publisher_->get_topic_name());
+    } else {
+      LOGW("Cannot publish - publisher is null for topic %s", topic_.c_str());
     }
   }
 

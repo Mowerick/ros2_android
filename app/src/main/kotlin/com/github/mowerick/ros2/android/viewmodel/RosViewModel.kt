@@ -1,14 +1,18 @@
 package com.github.mowerick.ros2.android.viewmodel
 
+import android.content.Context
 import android.graphics.Bitmap
+import android.net.wifi.WifiManager
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.mowerick.ros2.android.NativeBridge
 import com.github.mowerick.ros2.android.model.CameraInfo
+import com.github.mowerick.ros2.android.model.NativeNotification
 import com.github.mowerick.ros2.android.model.NodeState
 import com.github.mowerick.ros2.android.model.PipelineNode
 import com.github.mowerick.ros2.android.model.SensorInfo
 import com.github.mowerick.ros2.android.model.SensorReading
+import com.github.mowerick.ros2.android.model.Severity
 import com.github.mowerick.ros2.android.model.TopicInfo
 import java.net.NetworkInterface
 import kotlinx.coroutines.delay
@@ -28,7 +32,7 @@ sealed class Screen {
     data class NodeDetail(val node: PipelineNode) : Screen()
 }
 
-class RosViewModel : ViewModel() {
+class RosViewModel(private val applicationContext: Context) : ViewModel() {
 
     private val _screen = MutableStateFlow<Screen>(Screen.Dashboard)
     val screen: StateFlow<Screen> = _screen
@@ -38,6 +42,8 @@ class RosViewModel : ViewModel() {
 
     private val _rosDomainId = MutableStateFlow(-1)
     val rosDomainId: StateFlow<Int> = _rosDomainId
+
+    private var multicastLock: WifiManager.MulticastLock? = null
 
     private val _sensors = MutableStateFlow<List<SensorInfo>>(emptyList())
     val sensors: StateFlow<List<SensorInfo>> = _sensors
@@ -59,10 +65,59 @@ class RosViewModel : ViewModel() {
     private val _cameraFrame = MutableStateFlow<Bitmap?>(null)
     val cameraFrame: StateFlow<Bitmap?> = _cameraFrame
 
+    private val _notifications = MutableStateFlow<List<NativeNotification>>(emptyList())
+    val notifications: StateFlow<List<NativeNotification>> = _notifications
+
+    private var nextNotificationId = 0L
+
     private var polling = false
     private var cameraPreviewPolling = false
     private val _isProbing = MutableStateFlow(false)
     val isProbing: StateFlow<Boolean> = _isProbing
+
+    init {
+        viewModelScope.launch {
+            while (true) {
+                pollNativeNotifications()
+                delay(500)
+            }
+        }
+    }
+
+    private fun pollNativeNotifications() {
+        try {
+            val json = NativeBridge.nativeGetPendingNotifications()
+            val arr = JSONArray(json)
+            if (arr.length() == 0) {
+                // Auto-dismiss expired notifications
+                val now = System.currentTimeMillis()
+                _notifications.value = _notifications.value.filter {
+                    now - it.timestampMs < 5000
+                }
+                return
+            }
+            val now = System.currentTimeMillis()
+            val newNotifications = mutableListOf<NativeNotification>()
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                newNotifications.add(
+                    NativeNotification(
+                        id = nextNotificationId++,
+                        message = obj.getString("message"),
+                        severity = if (obj.getString("severity") == "ERROR") Severity.ERROR else Severity.WARNING,
+                        timestampMs = now
+                    )
+                )
+            }
+            // Combine with existing non-expired, cap visible list
+            val existing = _notifications.value.filter { now - it.timestampMs < 5000 }
+            _notifications.value = (existing + newNotifications).takeLast(50)
+        } catch (_: Exception) {}
+    }
+
+    fun dismissNotification(id: Long) {
+        _notifications.value = _notifications.value.filter { it.id != id }
+    }
 
     fun loadNetworkInterfaces() {
         try {
@@ -93,11 +148,48 @@ class RosViewModel : ViewModel() {
     }
 
     fun startRos(domainId: Int, networkInterface: String) {
+        // Acquire multicast lock for DDS discovery
+        acquireMulticastLock()
+
         NativeBridge.nativeStartRos(domainId, networkInterface)
         _rosDomainId.value = domainId
         _rosStarted.value = true
         refreshSensorsAndCameras()
-        _screen.value = Screen.Dashboard
+    }
+
+    fun stopRos() {
+        NativeBridge.nativeStopRos()
+        releaseMulticastLock()
+        _rosStarted.value = false
+        refreshSensorsAndCameras()
+    }
+
+    private fun acquireMulticastLock() {
+        try {
+            val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            multicastLock = wifiManager.createMulticastLock("ros2_dds_discovery").apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+        } catch (e: Exception) {
+            // Log or notify error
+        }
+    }
+
+    private fun releaseMulticastLock() {
+        try {
+            multicastLock?.let {
+                if (it.isHeld) {
+                    it.release()
+                }
+            }
+            multicastLock = null
+        } catch (_: Exception) {}
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        releaseMulticastLock()
     }
 
     // -- Dashboard navigation --

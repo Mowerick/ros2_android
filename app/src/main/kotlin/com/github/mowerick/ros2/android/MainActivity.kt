@@ -6,11 +6,15 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.github.mowerick.ros2.android.ui.components.NotificationOverlay
 import com.github.mowerick.ros2.android.ui.screens.BuiltInSensorsScreen
 import com.github.mowerick.ros2.android.ui.screens.CameraDetailScreen
 import com.github.mowerick.ros2.android.ui.screens.DashboardScreen
@@ -20,6 +24,7 @@ import com.github.mowerick.ros2.android.ui.screens.SensorDetailScreen
 import com.github.mowerick.ros2.android.ui.screens.SubsystemScreen
 import com.github.mowerick.ros2.android.ui.theme.Ros2AndroidTheme
 import com.github.mowerick.ros2.android.viewmodel.RosViewModel
+import com.github.mowerick.ros2.android.viewmodel.RosViewModelFactory
 import com.github.mowerick.ros2.android.viewmodel.Screen
 import java.net.NetworkInterface
 
@@ -46,7 +51,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             Ros2AndroidTheme {
-                val vm: RosViewModel = viewModel()
+                val vm: RosViewModel = viewModel(factory = RosViewModelFactory(applicationContext))
                 LaunchedEffect(Unit) { vm.loadNetworkInterfaces() }
 
                 val screen by vm.screen.collectAsState()
@@ -59,7 +64,9 @@ class MainActivity : ComponentActivity() {
                 val pipelineNodes by vm.pipelineNodes.collectAsState()
                 val isProbing by vm.isProbing.collectAsState()
                 val cameraFrame by vm.cameraFrame.collectAsState()
+                val activeNotifications by vm.notifications.collectAsState()
 
+                Box(modifier = Modifier.fillMaxSize()) {
                 when (val s = screen) {
                     is Screen.Dashboard -> DashboardScreen(
                         rosStarted = rosStarted,
@@ -76,6 +83,7 @@ class MainActivity : ComponentActivity() {
                         rosDomainId = rosDomainId,
                         onBack = { vm.navigateBack() },
                         onStartRos = { domainId, iface -> vm.startRos(domainId, iface) },
+                        onStopRos = { vm.stopRos() },
                         onRefreshInterfaces = { vm.refreshNetworkInterfaces() },
                         onDomainIdChanged = { vm.setDomainId(it) }
                     )
@@ -123,6 +131,11 @@ class MainActivity : ComponentActivity() {
                         onBack = { vm.navigateBack() },
                         onStartStop = { vm.toggleNodeState(s.node.id) }
                     )
+                }
+                NotificationOverlay(
+                    notifications = activeNotifications,
+                    onDismiss = { vm.dismissNotification(it) }
+                )
                 }
             }
         }
