@@ -23,6 +23,8 @@
 #include "sensors.h"
 
 static JavaVM *g_jvm = nullptr;
+static jobject g_notification_callback_object = nullptr;
+static jmethodID g_notification_callback_method = nullptr;
 
 class AndroidApp
 {
@@ -638,6 +640,80 @@ extern "C"
     }
     ss << "]";
     return env->NewStringUTF(ss.str().c_str());
+  }
+
+  JNIEXPORT void JNICALL
+  Java_com_github_mowerick_ros2_android_NativeBridge_nativeSetNotificationCallback(
+      JNIEnv *env, jobject thiz)
+  {
+    // Clean up previous callback if it exists
+    if (g_notification_callback_object != nullptr)
+    {
+      env->DeleteGlobalRef(g_notification_callback_object);
+      g_notification_callback_object = nullptr;
+      g_notification_callback_method = nullptr;
+    }
+
+    // Store global reference to the NativeBridge object
+    g_notification_callback_object = env->NewGlobalRef(thiz);
+
+    // Get the class and method ID for onNotification
+    jclass clazz = env->GetObjectClass(thiz);
+    g_notification_callback_method = env->GetStaticMethodID(
+        clazz, "onNotification", "(Ljava/lang/String;Ljava/lang/String;)V");
+
+    if (g_notification_callback_method == nullptr)
+    {
+      LOGE("Failed to find onNotification method");
+      env->DeleteGlobalRef(g_notification_callback_object);
+      g_notification_callback_object = nullptr;
+      return;
+    }
+
+    env->DeleteLocalRef(clazz);
+
+    // Set the callback in NotificationQueue
+    ros2_android::NotificationQueue::Instance().SetCallback(
+        [](ros2_android::NotificationSeverity severity, const std::string &message)
+        {
+          if (g_jvm == nullptr || g_notification_callback_object == nullptr ||
+              g_notification_callback_method == nullptr)
+          {
+            return;
+          }
+
+          JNIEnv *env = nullptr;
+          bool did_attach = false;
+          int status = g_jvm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_6);
+
+          if (status == JNI_EDETACHED)
+          {
+            if (g_jvm->AttachCurrentThread(&env, nullptr) != 0)
+            {
+              LOGE("Failed to attach thread for notification callback");
+              return;
+            }
+            did_attach = true;
+          }
+
+          const char *severity_str = (severity == ros2_android::NotificationSeverity::ERROR) ? "ERROR" : "WARNING";
+          jstring j_severity = env->NewStringUTF(severity_str);
+          jstring j_message = env->NewStringUTF(message.c_str());
+
+          jclass clazz = env->GetObjectClass(g_notification_callback_object);
+          env->CallStaticVoidMethod(clazz, g_notification_callback_method, j_severity, j_message);
+
+          env->DeleteLocalRef(j_severity);
+          env->DeleteLocalRef(j_message);
+          env->DeleteLocalRef(clazz);
+
+          if (did_attach)
+          {
+            g_jvm->DetachCurrentThread();
+          }
+        });
+
+    LOGI("Notification callback registered");
   }
 
 } // extern "C"

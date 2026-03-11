@@ -5,6 +5,8 @@ object NativeBridge {
         System.loadLibrary("android-ros")
     }
 
+    private var notificationCallback: ((String, String) -> Unit)? = null
+
     external fun nativeInit(cacheDir: String, packageName: String)
     external fun nativeDestroy()
     external fun nativeSetNetworkInterfaces(interfaces: Array<String>)
@@ -23,4 +25,17 @@ object NativeBridge {
     external fun nativeGetDiscoveredTopics(): String
     external fun nativeGetCameraFrame(uniqueId: String): ByteArray?
     external fun nativeGetPendingNotifications(): String
+    external fun nativeSetNotificationCallback()
+
+    fun setNotificationCallback(callback: (severity: String, message: String) -> Unit) {
+        notificationCallback = callback
+        nativeSetNotificationCallback()
+    }
+
+    // Called from native code (JNI)
+    @Suppress("unused")
+    @JvmStatic
+    private fun onNotification(severity: String, message: String) {
+        notificationCallback?.invoke(severity, message)
+    }
 }

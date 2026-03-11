@@ -76,43 +76,36 @@ class RosViewModel(private val applicationContext: Context) : ViewModel() {
     val isProbing: StateFlow<Boolean> = _isProbing
 
     init {
-        viewModelScope.launch {
-            while (true) {
-                pollNativeNotifications()
-                delay(500)
+        // Register notification callback instead of polling
+        NativeBridge.setNotificationCallback { severity, message ->
+            viewModelScope.launch {
+                addNotification(message, if (severity == "ERROR") Severity.ERROR else Severity.WARNING)
             }
         }
-    }
 
-    private fun pollNativeNotifications() {
-        try {
-            val json = NativeBridge.nativeGetPendingNotifications()
-            val arr = JSONArray(json)
-            if (arr.length() == 0) {
-                // Auto-dismiss expired notifications
+        // Auto-dismiss expired notifications
+        viewModelScope.launch {
+            while (true) {
+                delay(1000)
                 val now = System.currentTimeMillis()
                 _notifications.value = _notifications.value.filter {
                     now - it.timestampMs < 5000
                 }
-                return
             }
-            val now = System.currentTimeMillis()
-            val newNotifications = mutableListOf<NativeNotification>()
-            for (i in 0 until arr.length()) {
-                val obj = arr.getJSONObject(i)
-                newNotifications.add(
-                    NativeNotification(
-                        id = nextNotificationId++,
-                        message = obj.getString("message"),
-                        severity = if (obj.getString("severity") == "ERROR") Severity.ERROR else Severity.WARNING,
-                        timestampMs = now
-                    )
-                )
-            }
-            // Combine with existing non-expired, cap visible list
-            val existing = _notifications.value.filter { now - it.timestampMs < 5000 }
-            _notifications.value = (existing + newNotifications).takeLast(50)
-        } catch (_: Exception) {}
+        }
+    }
+
+    private fun addNotification(message: String, severity: Severity) {
+        val now = System.currentTimeMillis()
+        val notification = NativeNotification(
+            id = nextNotificationId++,
+            message = message,
+            severity = severity,
+            timestampMs = now
+        )
+        // Combine with existing non-expired, cap visible list
+        val existing = _notifications.value.filter { now - it.timestampMs < 5000 }
+        _notifications.value = (existing + notification).takeLast(50)
     }
 
     fun dismissNotification(id: Long) {
