@@ -3,7 +3,9 @@
   <Domain id="any">
     <General>
       <AllowMulticast>true</AllowMulticast>
+      <Interfaces>
+        <NetworkInterface name="wlp194s0" />
+      </Interfaces>
     </General>
-
   </Domain>
 </CycloneDDS>

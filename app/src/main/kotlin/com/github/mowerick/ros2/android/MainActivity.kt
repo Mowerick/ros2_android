@@ -61,6 +61,7 @@ class MainActivity : ComponentActivity() {
                 val cameras by vm.cameras.collectAsState()
                 val reading by vm.currentReading.collectAsState()
                 val networkInterfaces by vm.networkInterfaces.collectAsState()
+                val selectedNetworkInterface by vm.selectedNetworkInterface.collectAsState()
                 val pipelineNodes by vm.pipelineNodes.collectAsState()
                 val isProbing by vm.isProbing.collectAsState()
                 val cameraFrame by vm.cameraFrame.collectAsState()
@@ -81,6 +82,7 @@ class MainActivity : ComponentActivity() {
                         rosStarted = rosStarted,
                         networkInterfaces = networkInterfaces,
                         rosDomainId = rosDomainId,
+                        selectedNetworkInterface = selectedNetworkInterface,
                         onBack = { vm.navigateBack() },
                         onStartRos = { domainId, iface -> vm.startRos(domainId, iface) },
                         onStopRos = { vm.stopRos() },
@@ -150,6 +152,17 @@ class MainActivity : ComponentActivity() {
         return try {
             NetworkInterface.getNetworkInterfaces()
                 ?.toList()
+                ?.filter { iface ->
+                    iface.isUp &&
+                    !iface.isLoopback &&
+                    !iface.isPointToPoint &&
+                    iface.supportsMulticast() &&
+                    // Exclude virtual/cellular interfaces
+                    !iface.name.startsWith("rmnet") &&
+                    !iface.name.startsWith("dummy") &&
+                    !iface.name.startsWith("tun") &&
+                    !iface.name.startsWith("ppp")
+                }
                 ?.map { it.name }
                 ?.toTypedArray()
                 ?: emptyArray()

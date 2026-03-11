@@ -44,15 +44,17 @@ fun RosSetupScreen(
     rosStarted: Boolean,
     networkInterfaces: List<String>,
     rosDomainId: Int,
+    selectedNetworkInterface: String?,
     onBack: () -> Unit,
     onStartRos: (domainId: Int, networkInterface: String) -> Unit,
     onStopRos: () -> Unit = {},
     onRefreshInterfaces: () -> Unit = {},
     onDomainIdChanged: (Int) -> Unit,
 ) {
-    var selectedInterface by remember(networkInterfaces) {
+    var selectedInterface by remember(networkInterfaces, selectedNetworkInterface) {
         mutableStateOf(
-            networkInterfaces.firstOrNull { it.startsWith("wlan") }
+            selectedNetworkInterface?.takeIf { it in networkInterfaces }
+                ?: networkInterfaces.firstOrNull { it.startsWith("wlan") }
                 ?: networkInterfaces.firstOrNull()
                 ?: ""
         )

@@ -57,6 +57,9 @@ class RosViewModel(private val applicationContext: Context) : ViewModel() {
     private val _networkInterfaces = MutableStateFlow<List<String>>(emptyList())
     val networkInterfaces: StateFlow<List<String>> = _networkInterfaces
 
+    private val _selectedNetworkInterface = MutableStateFlow<String?>(null)
+    val selectedNetworkInterface: StateFlow<String?> = _selectedNetworkInterface
+
     private val _pipelineNodes = MutableStateFlow(createDefaultPipelineNodes())
     val pipelineNodes: StateFlow<List<PipelineNode>> = _pipelineNodes
 
@@ -146,6 +149,7 @@ class RosViewModel(private val applicationContext: Context) : ViewModel() {
 
         NativeBridge.nativeStartRos(domainId, networkInterface)
         _rosDomainId.value = domainId
+        _selectedNetworkInterface.value = networkInterface
         _rosStarted.value = true
         refreshSensorsAndCameras()
     }
