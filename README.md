@@ -44,7 +44,7 @@ The native layer cross-compiles ~70 ROS 2 Humble packages via a CMake superbuild
 You do not need ROS installed on your machine to build the app.
 
 > [!NOTE]
-> ROS 2 Humble is needed on a companion machine or on your device to use the scripts under `scripts/` to interact with the published topics. Follow [these instructions to install ROS Humble](https://docs.ros.org/en/humble/Installation.html).
+> ROS 2 Humble is needed on a companion machine or on your device to interact with the published topics. Follow [these instructions to install ROS Humble](https://docs.ros.org/en/humble/Installation.html).
 
 ### Dependencies
 
@@ -243,7 +243,7 @@ The app publishes ROS 2 topics that can be discovered and inspected from a compa
 **Required environment setup:**
 
 ```bash
-export CYCLONEDDS_URI=file://<path_to_project>/scripts/cyclonedds.xml
+export CYCLONEDDS_URI=file://<path_to_project>/config/cyclonedds.xml
 export ROS_DOMAIN_ID=1
 ```
 
@@ -252,26 +252,31 @@ Replace `<path_to_project>` with the absolute path to this repository (e.g., `/h
 **Common commands:**
 
 List all topics:
+
 ```bash
 ros2 topic list
 ```
 
 Show topic info (includes QoS settings):
+
 ```bash
 ros2 topic info /camera/front/image_color -v
 ```
 
 Echo camera info (lightweight):
+
 ```bash
 ros2 topic echo /camera/front/camera_info
 ```
 
 Echo camera images (high bandwidth):
+
 ```bash
 ros2 topic echo /camera/front/image_color --qos-reliability best_effort
 ```
 
 Check message rate:
+
 ```bash
 ros2 topic hz /camera/front/image_color
 ```
@@ -283,6 +288,110 @@ ros2 topic hz /camera/front/image_color
 - Cyclone DDS uses UDP unicast for data (dynamic port range 7410-7900)
 - Firewall must allow incoming UDP traffic on these ports
 - The `cyclonedds.xml` config specifies which network interface to use (default: `enp39s0`)
+
+## Testing with ROS 2 Nodes on Host Machine
+
+The Android app publishes sensor and camera data as ROS 2 topics that can be consumed by nodes running on a host machine (Linux/macOS). This enables visualization, logging, and integration with the full ROS 2 ecosystem.
+
+### Network Prerequisites
+
+**Multicast Discovery Requirements:**
+
+DDS discovery relies on UDP multicast (destination address 239.255.0.1). For nodes on different machines to discover each other, the network must support IGMP (Internet Group Management Protocol), which allows routers to intelligently forward multicast packets only to ports where applications have subscribed to the multicast group.
+
+**Common issues:**
+
+- **IGMP snooping disabled**: Some routers disable IGMP snooping by default, causing multicast packets to either flood all ports (inefficient) or be dropped entirely. This prevents DDS discovery across subnets.
+- **WiFi multicast filtering**: Many consumer and enterprise WiFi access points aggressively filter multicast traffic to reduce airtime usage, blocking DDS discovery packets even when IGMP is enabled.
+- **Firewall blocking multicast**: Host firewalls may drop incoming multicast packets by default.
+
+**Solutions:**
+
+1. **Enable IGMP snooping** on your router (check admin interface under "Multicast" or "IGMP" settings).
+2. **Allow UDP multicast in host firewall**:
+   ```bash
+   # Allow incoming UDP from Android device (replace <ip_of_phone> with device IP)
+   sudo iptables -I INPUT 1 -p udp -s <ip_of_phone> -j ACCEPT
+   ```
+   Alternatively, allow all multicast traffic:
+   ```bash
+   sudo iptables -A INPUT -m pkttype --pkt-type multicast -j ACCEPT
+   ```
+3. **Verify both devices are on the same subnet** (e.g., both have 192.168.1.x addresses).
+
+**Check Android device IP:**
+
+```bash
+adb shell ip addr show wlan0 | grep inet
+```
+
+### Environment Setup on Host Machine
+
+Set the DDS configuration and domain ID to match the Android app:
+
+```bash
+export CYCLONEDDS_URI=file://<path_to_project>/config/cyclonedds.xml
+export ROS_DOMAIN_ID=1
+```
+
+Replace `<path_to_project>` with the absolute path to this repository (e.g., `/home/user/ros2_android`).
+
+**Edit `config/cyclonedds.xml`** to specify your host's network interface (replace `enp39s0` with your interface name from `ip link show`):
+
+```xml
+<NetworkInterfaceAddress>enp39s0</NetworkInterfaceAddress>
+```
+
+### Verifying Discovery
+
+List all discovered topics (should include topics from the Android app like `/camera/front/image_color`):
+
+```bash
+ros2 topic list
+```
+
+Check topic details and QoS settings:
+
+```bash
+ros2 topic info /camera/front/image_color -v
+```
+
+Measure message publication rate:
+
+```bash
+ros2 topic hz /camera/front/image_color
+```
+
+### Visualizing Camera Feed
+
+Use `rqt_image_view` to display the camera stream from the Android device:
+
+```bash
+ros2 run rqt_image_view rqt_image_view
+```
+
+In the GUI, select the topic `/camera/front/image_color` from the dropdown. The video feed should appear in real-time.
+
+**Troubleshooting:**
+
+- **No topics visible**: Check that `ROS_DOMAIN_ID` matches on both devices (default is 1 in the app).
+- **Topics listed but no data**: Camera may not be active in the app. Start the camera publisher from the UI.
+- **High latency**: Camera images are large (~1-3 MB/frame). Ensure both devices are on 5 GHz WiFi or wired Ethernet.
+- **QoS mismatch**: The camera publisher uses `best_effort` reliability. Subscribers must match:
+  ```bash
+  ros2 topic echo /camera/front/image_color --qos-reliability best_effort
+  ```
+
+### Other Available Topics
+
+- **Sensor data**: `/sensors/accel`, `/sensors/gyro`, `/sensors/mag`, `/sensors/baro`, `/sensors/illuminance`
+- **Camera info**: `/camera/front/camera_info` (contains intrinsic calibration parameters)
+
+Echo a topic to inspect data:
+
+```bash
+ros2 topic echo /sensors/accel
+```
 
 ## Documentation
 

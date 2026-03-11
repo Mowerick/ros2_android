@@ -72,23 +72,24 @@ class Publisher {
   }
 
   void CreatePublisher() {
-    LOGI("Created publisher!");
     // Check just in case publisher became disabled
     if (enable_) {
       auto node = ros_.get_node();
       publisher_ = node->template create_publisher<MsgT>(topic_, qos_);
+      LOGI("Created publisher for topic %s", topic_.c_str());
       // Tell ROS interface to destroy publisher when it's shutdown
       ros_.AddObserver(std::bind(&Publisher::DestroyPublisher, this));
     }
   }
 
   void DestroyPublisher() {
-    LOGI("Destroyed publisher!");
-    publisher_.reset();
+    if (publisher_) {
+      LOGI("Destroyed publisher for topic %s", topic_.c_str());
+      publisher_.reset();
+    }
   }
 
   void Enable() {
-    LOGI("Asked to enable publisher");
     enable_ = true;
     if (!publisher_) {
       if (ros_.Initialized()) {
@@ -101,7 +102,6 @@ class Publisher {
   }
 
   void Disable() {
-    LOGI("Asked to disable publisher");
     enable_ = false;
     DestroyPublisher();
   }
@@ -119,19 +119,22 @@ class Publisher {
 
   // Big messages to avoid copies
   void Publish(std::unique_ptr<MsgT> msg) const {
-    if (publisher_) {
-      publisher_->template publish(std::move(msg));
+    if (!publisher_) {
+      // Publisher not ready - silently drop the message
+      // This is expected during initialization before ROS is fully started
+      return;
     }
+    publisher_->template publish(std::move(msg));
   }
 
   // Little messages to avoid heap allocation
   void Publish(const MsgT& msg) const {
-    if (publisher_) {
-      publisher_->publish(msg);
-      LOGI("Published message to %s", publisher_->get_topic_name());
-    } else {
-      LOGW("Cannot publish - publisher is null for topic %s", topic_.c_str());
+    if (!publisher_) {
+      // Publisher not ready - silently drop the message
+      // This is expected during initialization before ROS is fully started
+      return;
     }
+    publisher_->publish(msg);
   }
 
  private:

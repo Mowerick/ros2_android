@@ -3,9 +3,7 @@
   <Domain id="any">
     <General>
       <AllowMulticast>true</AllowMulticast>
-      <Interfaces>
-        <NetworkInterface name="enp39s0" />
-      </Interfaces>
     </General>
+
   </Domain>
 </CycloneDDS>
