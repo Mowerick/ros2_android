@@ -178,3 +178,41 @@ The `jvm.h/cc` was reduced to just `SetJavaVM`/`GetJavaVM` for any future native
 **Limitations**: Cannot use newer Compose APIs (e.g., `HorizontalDivider`, `Icons.AutoMirrored`) until the Kotlin compiler extension is upgraded.
 **Issues encountered**: Using newer Compose APIs with older library versions causes `Unresolved reference` errors at compile time, not link time. The error messages are clear but the root cause (version mismatch) is not obvious unless you know which API was introduced in which version.
 **References**: Kotlin Compose compiler compatibility map.
+
+### Native Code Directory Restructuring
+
+**Why**: The original flat `src/` directory contained ~40 C++ source files with no clear organization - JNI bridge code, ROS interface, sensor implementations, sensor controllers, camera code, and core utilities were all mixed together at the root level. This made navigation difficult and obscured the architectural layers (JNI boundary, core utilities, ROS integration, device abstractions, ROS publishers).
+**Approach**: Reorganized `src/` into a hierarchical structure that separates abstraction layers:
+
+```
+src/
+├── jni/              # JNI bridge & JVM utilities
+│   ├── jni_bridge.cc
+│   ├── jvm.cc
+│   └── jvm.h
+├── core/             # Cross-cutting utilities (log, events, notifications)
+│   ├── log.h
+│   ├── events.h
+│   └── notification_queue.h
+├── ros/              # ROS 2 interface layer
+│   ├── ros_interface.cc
+│   └── ros_interface.h
+├── sensors/          # Sensor subsystem
+│   ├── base/         # Abstract interfaces (sensor.h, sensor_descriptor.h, sensor_data_provider.h)
+│   ├── impl/         # Concrete implementations (accelerometer, gyroscope, barometer, illuminance, magnetometer)
+│   ├── controllers/  # ROS 2 publishers (one controller per sensor type)
+│   ├── sensors.cc    # Sensor registry/factory
+│   └── sensors.h
+└── camera/           # Camera subsystem
+    ├── base/         # Camera abstractions (camera_descriptor.h, camera_device.h)
+    ├── camera_manager.cc
+    ├── camera_manager.h
+    └── controllers/  # ROS 2 camera publisher (camera_controller.h)
+```
+
+Files were moved using `git mv` to preserve history. All `#include` directives (43 files total) were updated to use paths relative to `src/` root. `CMakeLists.txt` was updated with the new paths and grouped by layer (JNI, ROS, sensors base/impl/controllers, camera base/controllers).
+
+**Alternatives**: Could have used a feature-based structure (group all camera files together regardless of layer) rather than layer-based, but that would obscure dependencies - controllers depend on base classes, base classes don't depend on controllers.
+**Limitations**: None - the new structure is backward-compatible since all paths are updated.
+**Issues encountered**: None significant. The restructuring was mechanical: create directories, move files with `git mv`, update includes, update CMakeLists.txt.
+**References**: Clean Architecture principles (dependency hierarchy), sensors_for_ros original structure (flat layout with controllers/ subdirectory).

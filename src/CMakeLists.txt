@@ -11,26 +11,39 @@ find_package(sensor_msgs REQUIRED)
 set(CMAKE_VERBOSE_MAKEFILE ON)
 
 add_library(android-ros SHARED
-  jni_bridge.cc
-  camera_descriptor.cc
-  camera_device.cc
-  camera_manager.cc
-  controllers/accelerometer_sensor_controller.cc
-  controllers/barometer_sensor_controller.cc
-  controllers/camera_controller.cc
-  controllers/gyroscope_sensor_controller.cc
-  controllers/illuminance_sensor_controller.cc
-  controllers/magnetometer_sensor_controller.cc
-  jvm.cc
-  ros_interface.cc
-  sensor.cc
-  sensor_descriptor.cc
-  sensors.cc
-  sensors/accelerometer_sensor.cc
-  sensors/barometer_sensor.cc
-  sensors/gyroscope_sensor.cc
-  sensors/illuminance_sensor.cc
-  sensors/magnetometer_sensor.cc
+  # JNI layer
+  jni/jni_bridge.cc
+  jni/jvm.cc
+
+  # ROS interface
+  ros/ros_interface.cc
+
+  # Sensor base classes
+  sensors/base/sensor.cc
+  sensors/base/sensor_descriptor.cc
+  sensors/sensors.cc
+
+  # Sensor implementations
+  sensors/impl/accelerometer_sensor.cc
+  sensors/impl/barometer_sensor.cc
+  sensors/impl/gyroscope_sensor.cc
+  sensors/impl/illuminance_sensor.cc
+  sensors/impl/magnetometer_sensor.cc
+
+  # Sensor controllers
+  sensors/controllers/accelerometer_sensor_controller.cc
+  sensors/controllers/barometer_sensor_controller.cc
+  sensors/controllers/gyroscope_sensor_controller.cc
+  sensors/controllers/illuminance_sensor_controller.cc
+  sensors/controllers/magnetometer_sensor_controller.cc
+
+  # Camera base classes
+  camera/base/camera_descriptor.cc
+  camera/base/camera_device.cc
+  camera/camera_manager.cc
+
+  # Camera controller
+  camera/controllers/camera_controller.cc
 )
 target_link_libraries(android-ros PRIVATE
     android
