@@ -6,8 +6,9 @@ import android.net.wifi.WifiManager
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.mowerick.ros2.android.GpsManager
-import com.github.mowerick.ros2.android.MainActivity
 import com.github.mowerick.ros2.android.NativeBridge
+import com.github.mowerick.ros2.android.interfaces.NetworkInterfaceProvider
+import com.github.mowerick.ros2.android.interfaces.PermissionHandler
 import com.github.mowerick.ros2.android.model.CameraInfo
 import com.github.mowerick.ros2.android.model.NativeNotification
 import com.github.mowerick.ros2.android.model.NodeDependencyGraph
@@ -35,7 +36,11 @@ sealed class Screen {
     data class NodeDetail(val nodeId: String) : Screen()
 }
 
-class RosViewModel(private val applicationContext: Context) : ViewModel() {
+class RosViewModel(
+    private val applicationContext: Context,
+    private val permissionHandler: PermissionHandler,
+    private val networkProvider: NetworkInterfaceProvider
+) : ViewModel() {
 
     private val _screen = MutableStateFlow<Screen>(Screen.Dashboard)
     val screen: StateFlow<Screen> = _screen
@@ -98,7 +103,7 @@ class RosViewModel(private val applicationContext: Context) : ViewModel() {
                 }
             },
             onPermissionNeeded = {
-                MainActivity.requestLocationPermission()
+                permissionHandler.requestLocationPermission()
             },
             onSettingsNeeded = { _ ->
                 // Settings check will be triggered when needed
@@ -109,7 +114,7 @@ class RosViewModel(private val applicationContext: Context) : ViewModel() {
         NativeBridge.setGpsCallbacks(
             onEnable = {
                 android.util.Log.i("RosViewModel", "GPS enable callback received")
-                val launcher = MainActivity.getLocationSettingsLauncher()
+                val launcher = permissionHandler.getLocationSettingsLauncher()
                 gpsManager.startWithChecks(launcher)
             },
             onDisable = {
@@ -158,7 +163,7 @@ class RosViewModel(private val applicationContext: Context) : ViewModel() {
 
     fun refreshNetworkInterfaces() {
         try {
-            val ifaces = MainActivity.queryNetworkInterfaces()
+            val ifaces = networkProvider.queryNetworkInterfaces()
             NativeBridge.nativeSetNetworkInterfaces(ifaces)
             loadNetworkInterfaces()
         } catch (e: Exception) {
@@ -184,7 +189,7 @@ class RosViewModel(private val applicationContext: Context) : ViewModel() {
     fun onLocationSettingsEnabled() {
         android.util.Log.i("RosViewModel", "User enabled location settings, restarting GPS")
         // GPS manager will handle starting location updates
-        val launcher = MainActivity.getLocationSettingsLauncher()
+        val launcher = permissionHandler.getLocationSettingsLauncher()
         gpsManager.startWithChecks(launcher)
     }
 
@@ -325,7 +330,7 @@ class RosViewModel(private val applicationContext: Context) : ViewModel() {
     fun onLocationPermissionGranted() {
         android.util.Log.i("RosViewModel", "Location permission granted")
         if (_rosStarted.value && !gpsManager.isRunning()) {
-            val launcher = MainActivity.getLocationSettingsLauncher()
+            val launcher = permissionHandler.getLocationSettingsLauncher()
             gpsManager.startWithChecks(launcher)
         }
     }

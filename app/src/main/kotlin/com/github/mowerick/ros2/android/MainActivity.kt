@@ -23,60 +23,17 @@ import com.github.mowerick.ros2.android.ui.screens.NodeDetailScreen
 import com.github.mowerick.ros2.android.ui.screens.RosSetupScreen
 import com.github.mowerick.ros2.android.ui.screens.SensorDetailScreen
 import com.github.mowerick.ros2.android.ui.screens.SubsystemScreen
+import com.github.mowerick.ros2.android.interfaces.NetworkInterfaceProvider
+import com.github.mowerick.ros2.android.interfaces.PermissionHandler
 import com.github.mowerick.ros2.android.ui.theme.Ros2AndroidTheme
 import com.github.mowerick.ros2.android.viewmodel.RosViewModel
 import com.github.mowerick.ros2.android.viewmodel.RosViewModelFactory
 import com.github.mowerick.ros2.android.viewmodel.Screen
 import java.net.NetworkInterface
 
-class MainActivity : ComponentActivity() {
+class MainActivity : ComponentActivity(), PermissionHandler, NetworkInterfaceProvider {
 
-    companion object {
-        private var instance: MainActivity? = null
-        private var viewModel: RosViewModel? = null
-
-        fun requestLocationPermission() {
-            instance?.requestLocationPermission?.launch(Manifest.permission.ACCESS_FINE_LOCATION)
-        }
-
-        fun hasLocationPermission(): Boolean {
-            return instance?.let {
-                ContextCompat.checkSelfPermission(it, Manifest.permission.ACCESS_FINE_LOCATION) ==
-                    PackageManager.PERMISSION_GRANTED
-            } ?: false
-        }
-
-        fun setViewModel(vm: RosViewModel) {
-            viewModel = vm
-        }
-
-        fun getActivity(): MainActivity? = instance
-
-        fun getLocationSettingsLauncher() = instance?.locationSettingsLauncher
-
-        fun queryNetworkInterfaces(): Array<String> {
-            return try {
-                NetworkInterface.getNetworkInterfaces()
-                    ?.toList()
-                    ?.filter { iface ->
-                        iface.isUp &&
-                        !iface.isLoopback &&
-                        !iface.isPointToPoint &&
-                        iface.supportsMulticast() &&
-                        // Exclude virtual/cellular interfaces
-                        !iface.name.startsWith("rmnet") &&
-                        !iface.name.startsWith("dummy") &&
-                        !iface.name.startsWith("tun") &&
-                        !iface.name.startsWith("ppp")
-                    }
-                    ?.map { it.name }
-                    ?.toTypedArray()
-                    ?: emptyArray()
-            } catch (e: Exception) {
-                emptyArray()
-            }
-        }
-    }
+    private var currentViewModel: RosViewModel? = null
 
     private val requestCameraPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -85,11 +42,11 @@ class MainActivity : ComponentActivity() {
             checkLocationPermission()
         }
 
-    private val requestLocationPermission =
+    private val requestLocationPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             NativeBridge.nativeOnPermissionResult("LOCATION", granted)
             if (granted) {
-                viewModel?.onLocationPermissionGranted()
+                currentViewModel?.onLocationPermissionGranted()
             }
         }
 
@@ -98,19 +55,54 @@ class MainActivity : ComponentActivity() {
             android.util.Log.i("MainActivity", "Location settings result: ${result.resultCode}")
             if (result.resultCode == RESULT_OK) {
                 android.util.Log.i("MainActivity", "Location settings enabled by user")
-                viewModel?.onLocationSettingsEnabled()
+                currentViewModel?.onLocationSettingsEnabled()
             } else {
                 android.util.Log.w("MainActivity", "User declined to enable location settings")
-                viewModel?.onLocationSettingsCancelled()
+                currentViewModel?.onLocationSettingsCancelled()
             }
         }
 
+    // PermissionHandler implementation
+    override fun requestLocationPermission() {
+        requestLocationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+    }
+
+    override fun hasLocationPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+    }
+
+    override fun getLocationSettingsLauncher() = locationSettingsLauncher
+
+    // NetworkInterfaceProvider implementation
+    override fun queryNetworkInterfaces(): Array<String> {
+        return try {
+            NetworkInterface.getNetworkInterfaces()
+                ?.toList()
+                ?.filter { iface ->
+                    iface.isUp &&
+                    !iface.isLoopback &&
+                    !iface.isPointToPoint &&
+                    iface.supportsMulticast() &&
+                    // Exclude virtual/cellular interfaces
+                    !iface.name.startsWith("rmnet") &&
+                    !iface.name.startsWith("dummy") &&
+                    !iface.name.startsWith("tun") &&
+                    !iface.name.startsWith("ppp")
+                }
+                ?.map { it.name }
+                ?.toTypedArray()
+                ?: emptyArray()
+        } catch (e: Exception) {
+            emptyArray()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        instance = this
 
         NativeBridge.nativeInit(cacheDir.absolutePath, packageName)
-        NativeBridge.nativeSetNetworkInterfaces(Companion.queryNetworkInterfaces())
+        NativeBridge.nativeSetNetworkInterfaces(queryNetworkInterfaces())
 
         // Request camera permission first, then location in the callback
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
@@ -124,9 +116,15 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             Ros2AndroidTheme {
-                val vm: RosViewModel = viewModel(factory = RosViewModelFactory(applicationContext))
+                val vm: RosViewModel = viewModel(
+                    factory = RosViewModelFactory(
+                        applicationContext,
+                        this@MainActivity,  // PermissionHandler
+                        this@MainActivity   // NetworkInterfaceProvider
+                    )
+                )
                 LaunchedEffect(Unit) {
-                    setViewModel(vm)
+                    currentViewModel = vm
                     vm.loadNetworkInterfaces()
                 }
 
@@ -241,8 +239,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         NativeBridge.nativeDestroy()
-        instance = null
-        viewModel = null
+        currentViewModel = null
         super.onDestroy()
     }
 
@@ -250,7 +247,7 @@ class MainActivity : ComponentActivity() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
             != PackageManager.PERMISSION_GRANTED
         ) {
-            requestLocationPermission.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+            requestLocationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
         } else {
             NativeBridge.nativeOnPermissionResult("LOCATION", true)
         }

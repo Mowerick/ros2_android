@@ -3,12 +3,22 @@ package com.github.mowerick.ros2.android.viewmodel
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import com.github.mowerick.ros2.android.interfaces.NetworkInterfaceProvider
+import com.github.mowerick.ros2.android.interfaces.PermissionHandler
 
-class RosViewModelFactory(private val applicationContext: Context) : ViewModelProvider.Factory {
+class RosViewModelFactory(
+    private val applicationContext: Context,
+    private val permissionHandler: PermissionHandler,
+    private val networkProvider: NetworkInterfaceProvider
+) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(RosViewModel::class.java)) {
-            return RosViewModel(applicationContext) as T
+            return RosViewModel(
+                applicationContext,
+                permissionHandler,
+                networkProvider
+            ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }
