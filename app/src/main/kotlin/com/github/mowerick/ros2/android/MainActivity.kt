@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
@@ -141,6 +142,11 @@ class MainActivity : ComponentActivity() {
                 val isProbing by vm.isProbing.collectAsState()
                 val cameraFrame by vm.cameraFrame.collectAsState()
                 val activeNotifications by vm.notifications.collectAsState()
+
+                // Handle back button: navigate back if in submenu, exit if on Dashboard
+                BackHandler(enabled = screen != Screen.Dashboard) {
+                    vm.navigateBack()
+                }
 
                 Box(modifier = Modifier.fillMaxSize()) {
                 when (val s = screen) {
