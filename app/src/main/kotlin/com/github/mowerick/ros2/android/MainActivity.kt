@@ -52,6 +52,29 @@ class MainActivity : ComponentActivity() {
         fun getActivity(): MainActivity? = instance
 
         fun getLocationSettingsLauncher() = instance?.locationSettingsLauncher
+
+        fun queryNetworkInterfaces(): Array<String> {
+            return try {
+                NetworkInterface.getNetworkInterfaces()
+                    ?.toList()
+                    ?.filter { iface ->
+                        iface.isUp &&
+                        !iface.isLoopback &&
+                        !iface.isPointToPoint &&
+                        iface.supportsMulticast() &&
+                        // Exclude virtual/cellular interfaces
+                        !iface.name.startsWith("rmnet") &&
+                        !iface.name.startsWith("dummy") &&
+                        !iface.name.startsWith("tun") &&
+                        !iface.name.startsWith("ppp")
+                    }
+                    ?.map { it.name }
+                    ?.toTypedArray()
+                    ?: emptyArray()
+            } catch (e: Exception) {
+                emptyArray()
+            }
+        }
     }
 
     private val requestCameraPermission =
@@ -86,7 +109,7 @@ class MainActivity : ComponentActivity() {
         instance = this
 
         NativeBridge.nativeInit(cacheDir.absolutePath, packageName)
-        NativeBridge.nativeSetNetworkInterfaces(queryNetworkInterfaces())
+        NativeBridge.nativeSetNetworkInterfaces(Companion.queryNetworkInterfaces())
 
         // Request camera permission first, then location in the callback
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
@@ -209,29 +232,6 @@ class MainActivity : ComponentActivity() {
             requestLocationPermission.launch(Manifest.permission.ACCESS_FINE_LOCATION)
         } else {
             NativeBridge.nativeOnPermissionResult("LOCATION", true)
-        }
-    }
-
-    private fun queryNetworkInterfaces(): Array<String> {
-        return try {
-            NetworkInterface.getNetworkInterfaces()
-                ?.toList()
-                ?.filter { iface ->
-                    iface.isUp &&
-                    !iface.isLoopback &&
-                    !iface.isPointToPoint &&
-                    iface.supportsMulticast() &&
-                    // Exclude virtual/cellular interfaces
-                    !iface.name.startsWith("rmnet") &&
-                    !iface.name.startsWith("dummy") &&
-                    !iface.name.startsWith("tun") &&
-                    !iface.name.startsWith("ppp")
-                }
-                ?.map { it.name }
-                ?.toTypedArray()
-                ?: emptyArray()
-        } catch (e: Exception) {
-            emptyArray()
         }
     }
 }

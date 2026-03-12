@@ -147,11 +147,7 @@ class RosViewModel(private val applicationContext: Context) : ViewModel() {
 
     fun refreshNetworkInterfaces() {
         try {
-            val ifaces = NetworkInterface.getNetworkInterfaces()
-                ?.toList()
-                ?.map { it.name }
-                ?.toTypedArray()
-                ?: emptyArray()
+            val ifaces = MainActivity.queryNetworkInterfaces()
             NativeBridge.nativeSetNetworkInterfaces(ifaces)
             loadNetworkInterfaces()
         } catch (_: Exception) {}
