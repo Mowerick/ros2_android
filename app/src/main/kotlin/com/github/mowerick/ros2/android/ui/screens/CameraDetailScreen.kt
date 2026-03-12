@@ -4,10 +4,13 @@ import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.Button
@@ -55,7 +58,8 @@ fun CameraDetailScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(16.dp),
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             if (camera.enabled) {
@@ -89,7 +93,7 @@ fun CameraDetailScreen(
                         contentDescription = "Camera preview",
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(1f)
+                            .aspectRatio(ratio)
                             .graphicsLayer {
                                 rotationZ = camera.sensorOrientation.toFloat()
                                 if (camera.isFrontFacing) scaleY = -1f
@@ -97,11 +101,13 @@ fun CameraDetailScreen(
                         contentScale = ContentScale.Fit
                     )
                 } else {
-                    Text(
-                        text = "Waiting for camera frame...",
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.weight(1f)
-                    )
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = "Waiting for camera frame...",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(32.dp)
+                        )
+                    }
                 }
             }
 

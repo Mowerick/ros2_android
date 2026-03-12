@@ -184,7 +184,7 @@ fun RosSetupScreen(
             if (rosStarted) {
                 OutlinedButton(
                     onClick = { onStartRos(rosDomainId, selectedInterface) },
-                    enabled = rosDomainId >= 0,
+                    enabled = rosDomainId >= 0 && networkInterfaces.isNotEmpty(),
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp)
@@ -194,7 +194,7 @@ fun RosSetupScreen(
             } else {
                 Button(
                     onClick = { onStartRos(rosDomainId, selectedInterface) },
-                    enabled = rosDomainId >= 0,
+                    enabled = rosDomainId >= 0 && networkInterfaces.isNotEmpty(),
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp)
