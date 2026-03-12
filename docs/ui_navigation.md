@@ -86,6 +86,74 @@ Back navigation (`RosViewModel.navigateBack()`):
 - **Role**: Shows camera info and enable/disable controls.
 - **Unchanged** from original sensors_for_ros implementation.
 
+## Permission & Settings Flows
+
+### GPS Location Permission and Settings Flow
+
+**Why**: The GPS sensor (which publishes to `/gps` as `sensor_msgs/msg/NavSatFix`) requires both Android location permission (`ACCESS_FINE_LOCATION`) and location services to be enabled in system settings. Unlike other sensors, GPS cannot simply be enabled directly - it requires user interaction with system permission dialogs and settings screens. The UI must handle the complete flow including user acceptance or rejection at each step.
+
+**Approach**: Implemented a multi-step permission/settings flow with proper state tracking:
+
+1. **User enables GPS sensor** in `BuiltInSensorsScreen` by toggling the switch
+2. **Native callback fires**: `GpsController::Enable()` calls JNI callback `NativeBridge.onGpsEnable()`
+3. **ViewModel tracks request**: `RosViewModel` stores `pendingGpsSensorId = "gps_location_provider"` to track which sensor initiated the request
+4. **GpsManager orchestrates checks**: `GpsManager.startWithChecks()` runs permission and settings checks sequentially:
+   - **Permission check**: If not granted, triggers `MainActivity.requestLocationPermissionLauncher`
+   - **Settings check**: If granted but settings disabled, triggers `MainActivity.locationSettingsLauncher` with Google Play Services `ResolvableApiException`
+5. **User makes decision**: User sees system dialog(s) and can accept or decline
+6. **Result handling**:
+   - **Permission granted**: `MainActivity` calls `RosViewModel.onLocationPermissionGranted()` which proceeds to settings check
+   - **Permission denied**: `MainActivity` calls `RosViewModel.onLocationPermissionDenied()` which:
+     * Shows warning notification: "GPS: Location permission required"
+     * Disables the GPS sensor via `NativeBridge.nativeDisableSensor(pendingGpsSensorId)`
+     * Refreshes sensor list so UI reflects disabled state
+     * Clears `pendingGpsSensorId`
+   - **Settings enabled**: `MainActivity` calls `RosViewModel.onLocationSettingsEnabled()` which starts GPS updates via `GpsManager.startWithChecks()`
+   - **Settings declined**: `MainActivity` calls `RosViewModel.onLocationSettingsCancelled()` which:
+     * Shows warning notification: "GPS: Location services required"
+     * Disables the GPS sensor via `NativeBridge.nativeDisableSensor(pendingGpsSensorId)`
+     * Refreshes sensor list so UI reflects disabled state
+     * Clears `pendingGpsSensorId`
+
+**Key Implementation Details**:
+- `pendingGpsSensorId` field in `RosViewModel` (line 89) tracks the GPS sensor ID between enable callback and permission/settings result
+- Set when `onGpsEnable` callback fires (line 119)
+- Cleared when settings enabled (line 195), GPS manually disabled (line 127), or user declines (lines 208, 359)
+- Both denial paths call `NativeBridge.nativeDisableSensor(pendingGpsSensorId)` to ensure UI consistency
+
+**Alternatives**:
+- **Optimistic enablement**: Could leave sensor enabled and show error notifications when GPS fails to start. Rejected because it creates UI inconsistency - sensor appears enabled but doesn't publish data.
+- **Automatic retry**: Could automatically re-prompt user if they decline. Rejected to avoid annoying permission spam - user's decision is respected immediately.
+- **Global GPS state flag**: Could use boolean flag instead of tracking sensor ID. Rejected because future implementations might have multiple GPS-dependent features requiring independent tracking.
+
+**Limitations**:
+- Currently assumes only one GPS sensor (`"gps_location_provider"`) - if multiple GPS sources are added, would need set/map structure for `pendingGpsSensorId`
+- If user enables GPS, declines permission, then re-enables GPS within milliseconds, race condition possible (unlikely in practice)
+- No "Don't ask again" handling - if user permanently denies permission, they must manually enable in system settings
+
+**User Experience**:
+- GPS sensor toggle in `BuiltInSensorsScreen` provides immediate feedback:
+  * Toggle switches ON → permission/settings dialogs appear
+  * User declines → toggle automatically switches back OFF with warning notification
+  * User accepts → toggle stays ON and GPS starts publishing
+- Prevents confusing state where sensor appears enabled but silently fails to publish
+- Warning notifications explain why GPS didn't enable ("permission required" vs "location services required")
+
+**Issues Encountered**:
+- **Initial bug**: `NativeBridge.nativeEnableSensor()` was called before permission checks, but sensor wasn't disabled when user declined dialogs. This caused GPS sensor to appear enabled in UI even though it couldn't publish data.
+- **Root cause**: Permission/settings dialog launchers are asynchronous - `launcher.launch()` returns immediately without waiting for user decision. The result arrives later via `MainActivity` activity result callbacks.
+- **Solution**: Track pending enable request with `pendingGpsSensorId` and disable sensor in both decline paths (`onLocationPermissionDenied` and `onLocationSettingsCancelled`).
+
+**Files Modified**:
+- `ros2_android/app/src/main/kotlin/com/github/mowerick/ros2/android/viewmodel/RosViewModel.kt` - Added `pendingGpsSensorId` tracking and denial handlers (lines 89, 119, 127, 195, 202-208, 350-361)
+- `ros2_android/app/src/main/kotlin/com/github/mowerick/ros2/android/MainActivity.kt` - Added `onLocationPermissionDenied()` callback (line 51)
+- `ros2_android/app/src/main/kotlin/com/github/mowerick/ros2/android/GpsManager.kt` - Already implements `startWithChecks()` with permission/settings validation
+
+**References**:
+- Android location permission flow: https://developer.android.com/training/location/permissions
+- Google Play Services `LocationSettingsRequest`: https://developers.google.com/android/reference/com/google/android/gms/location/LocationSettingsRequest
+- ActivityResultContracts documentation: https://developer.android.com/reference/androidx/activity/result/contract/ActivityResultContracts
+
 ## Reusable Components
 
 ### SectionCard

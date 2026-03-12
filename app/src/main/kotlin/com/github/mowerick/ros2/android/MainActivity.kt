@@ -47,6 +47,8 @@ class MainActivity : ComponentActivity(), PermissionHandler, NetworkInterfacePro
             NativeBridge.nativeOnPermissionResult("LOCATION", granted)
             if (granted) {
                 currentViewModel?.onLocationPermissionGranted()
+            } else {
+                currentViewModel?.onLocationPermissionDenied()
             }
         }
 

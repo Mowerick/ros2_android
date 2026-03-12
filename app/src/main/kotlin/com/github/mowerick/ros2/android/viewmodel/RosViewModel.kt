@@ -85,6 +85,9 @@ class RosViewModel(
     private val _isProbing = MutableStateFlow(false)
     val isProbing: StateFlow<Boolean> = _isProbing
 
+    // Track GPS sensor ID for handling user's location settings decision
+    private var pendingGpsSensorId: String? = null
+
     init {
         // Register notification callback instead of polling
         NativeBridge.setNotificationCallback { severity, message ->
@@ -112,12 +115,16 @@ class RosViewModel(
         NativeBridge.setGpsCallbacks(
             onEnable = {
                 android.util.Log.i("RosViewModel", "GPS enable callback received")
+                // Store the GPS sensor ID to track this enable request
+                pendingGpsSensorId = "gps_location_provider"
                 val launcher = permissionHandler.getLocationSettingsLauncher()
                 gpsManager.startWithChecks(launcher)
             },
             onDisable = {
                 android.util.Log.i("RosViewModel", "GPS disable callback received")
                 gpsManager.stop()
+                // Clear pending request since GPS is being disabled
+                pendingGpsSensorId = null
             }
         )
     }
@@ -184,11 +191,21 @@ class RosViewModel(
         // GPS manager will handle starting location updates
         val launcher = permissionHandler.getLocationSettingsLauncher()
         gpsManager.startWithChecks(launcher)
+        // Clear pending GPS sensor ID since settings are now enabled
+        pendingGpsSensorId = null
     }
 
     fun onLocationSettingsCancelled() {
         android.util.Log.w("RosViewModel", "User cancelled location settings dialog")
         addNotification("GPS: Location services required", Severity.WARNING)
+
+        // Disable the GPS sensor since user declined to enable location settings
+        pendingGpsSensorId?.let { sensorId ->
+            android.util.Log.i("RosViewModel", "Disabling GPS sensor due to cancelled settings: $sensorId")
+            NativeBridge.nativeDisableSensor(sensorId)
+            refreshSensors()
+            pendingGpsSensorId = null
+        }
     }
 
     fun stopRos() {
@@ -325,6 +342,21 @@ class RosViewModel(
         if (_rosStarted.value && !gpsManager.isRunning()) {
             val launcher = permissionHandler.getLocationSettingsLauncher()
             gpsManager.startWithChecks(launcher)
+        }
+        // Note: Don't clear pendingGpsSensorId here - we still need to handle
+        // the location settings dialog that may follow
+    }
+
+    fun onLocationPermissionDenied() {
+        android.util.Log.w("RosViewModel", "Location permission denied by user")
+        addNotification("GPS: Location permission required", Severity.WARNING)
+
+        // Disable the GPS sensor since user denied location permission
+        pendingGpsSensorId?.let { sensorId ->
+            android.util.Log.i("RosViewModel", "Disabling GPS sensor due to denied permission: $sensorId")
+            NativeBridge.nativeDisableSensor(sensorId)
+            refreshSensors()
+            pendingGpsSensorId = null
         }
     }
 
