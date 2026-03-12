@@ -10,6 +10,7 @@ import com.github.mowerick.ros2.android.MainActivity
 import com.github.mowerick.ros2.android.NativeBridge
 import com.github.mowerick.ros2.android.model.CameraInfo
 import com.github.mowerick.ros2.android.model.NativeNotification
+import com.github.mowerick.ros2.android.model.NodeDependencyGraph
 import com.github.mowerick.ros2.android.model.NodeState
 import com.github.mowerick.ros2.android.model.PipelineNode
 import com.github.mowerick.ros2.android.model.SensorInfo
@@ -321,47 +322,13 @@ class RosViewModel(private val applicationContext: Context) : ViewModel() {
     }
 
     fun isNodeStartable(nodeId: String): Boolean {
-        val nodes = _pipelineNodes.value
-        val node = nodes.find { it.id == nodeId } ?: return false
-        if (node.isExternal) return false
-        val upstream = node.upstreamNodeId ?: return true
-        val upstreamNode = nodes.find { it.id == upstream } ?: return false
-        return upstreamNode.state == NodeState.Running
+        val graph = NodeDependencyGraph(_pipelineNodes.value)
+        return graph.isNodeStartable(nodeId)
     }
 
     fun toggleNodeState(nodeId: String) {
-        val nodes = _pipelineNodes.value
-        val target = nodes.find { it.id == nodeId } ?: return
-        if (target.isExternal) return
-
-        // When stopping a node, also stop all downstream dependents
-        if (target.state == NodeState.Running) {
-            val toStop = mutableSetOf(nodeId)
-            // Iteratively find all downstream nodes
-            var changed = true
-            while (changed) {
-                changed = false
-                for (n in nodes) {
-                    if (n.upstreamNodeId in toStop && n.id !in toStop && !n.isExternal) {
-                        toStop.add(n.id)
-                        changed = true
-                    }
-                }
-            }
-            _pipelineNodes.value = nodes.map { node ->
-                if (node.id in toStop && node.state == NodeState.Running) {
-                    node.copy(state = NodeState.Stopped)
-                } else {
-                    node
-                }
-            }
-        } else {
-            // Only start if upstream is running
-            if (!isNodeStartable(nodeId)) return
-            _pipelineNodes.value = nodes.map { node ->
-                if (node.id == nodeId) node.copy(state = NodeState.Running) else node
-            }
-        }
+        val graph = NodeDependencyGraph(_pipelineNodes.value)
+        _pipelineNodes.value = graph.toggleNodeState(nodeId)
 
         // Update NodeDetail screen if currently viewing an affected node
         val current = _screen.value
@@ -652,26 +619,16 @@ class RosViewModel(private val applicationContext: Context) : ViewModel() {
     }
 
     private fun updateExternalNodeStates(discoveredTopics: Set<String>) {
-        var changed = false
-        val updated = _pipelineNodes.value.map { node ->
-            if (!node.isExternal) return@map node
-            // External node is "Running" if all its published topics are discovered
-            val allPublished = node.publishesTo.isNotEmpty() &&
-                node.publishesTo.all { it.name in discoveredTopics }
-            val newState = if (allPublished) NodeState.Running else NodeState.Stopped
-            if (newState != node.state) {
-                changed = true
-                node.copy(state = newState)
-            } else {
-                node
-            }
-        }
+        val graph = NodeDependencyGraph(_pipelineNodes.value)
+        val (updated, changed) = graph.updateExternalNodeStates(discoveredTopics)
+
         if (changed) {
             _pipelineNodes.value = updated
             // If an external node went to Stopped, cascade stop dependents
             val stoppedExternals = updated.filter { it.isExternal && it.state == NodeState.Stopped }
             for (ext in stoppedExternals) {
-                cascadeStop(ext.id)
+                val cascadeGraph = NodeDependencyGraph(_pipelineNodes.value)
+                _pipelineNodes.value = cascadeGraph.cascadeStop(ext.id)
             }
             // Refresh NodeDetail if viewing a node
             val current = _screen.value
@@ -684,31 +641,6 @@ class RosViewModel(private val applicationContext: Context) : ViewModel() {
         }
     }
 
-    private fun cascadeStop(parentId: String) {
-        val nodes = _pipelineNodes.value
-        val toStop = mutableSetOf<String>()
-        // Find all downstream nodes dependent on the stopped parent
-        var frontier = setOf(parentId)
-        while (frontier.isNotEmpty()) {
-            val next = mutableSetOf<String>()
-            for (n in nodes) {
-                if (n.upstreamNodeId in frontier && n.id !in toStop && !n.isExternal) {
-                    toStop.add(n.id)
-                    next.add(n.id)
-                }
-            }
-            frontier = next
-        }
-        if (toStop.isNotEmpty()) {
-            _pipelineNodes.value = _pipelineNodes.value.map { node ->
-                if (node.id in toStop && node.state == NodeState.Running) {
-                    node.copy(state = NodeState.Stopped)
-                } else {
-                    node
-                }
-            }
-        }
-    }
 
     companion object {
         private fun createDefaultPipelineNodes(): List<PipelineNode> = listOf(
