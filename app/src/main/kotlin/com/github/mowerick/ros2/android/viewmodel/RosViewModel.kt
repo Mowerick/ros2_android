@@ -90,14 +90,27 @@ class RosViewModel(private val applicationContext: Context) : ViewModel() {
             }
         }
 
-        // Register GPS enable/disable callbacks
+        // Set up GPS manager callbacks
+        gpsManager.setCallbacks(
+            onError = { message ->
+                viewModelScope.launch {
+                    addNotification(message, Severity.ERROR)
+                }
+            },
+            onPermissionNeeded = {
+                MainActivity.requestLocationPermission()
+            },
+            onSettingsNeeded = { _ ->
+                // Settings check will be triggered when needed
+            }
+        )
+
+        // Register GPS enable/disable callbacks from native
         NativeBridge.setGpsCallbacks(
             onEnable = {
                 android.util.Log.i("RosViewModel", "GPS enable callback received")
-                viewModelScope.launch {
-                    android.util.Log.i("RosViewModel", "Calling tryStartGps()")
-                    tryStartGps()
-                }
+                val launcher = MainActivity.getLocationSettingsLauncher()
+                gpsManager.startWithChecks(launcher)
             },
             onDisable = {
                 android.util.Log.i("RosViewModel", "GPS disable callback received")
@@ -168,73 +181,11 @@ class RosViewModel(private val applicationContext: Context) : ViewModel() {
         refreshSensorsAndCameras()
     }
 
-    private fun tryStartGps() {
-        android.util.Log.i("RosViewModel", "tryStartGps() called")
-
-        // Check if we have permission
-        if (!MainActivity.hasLocationPermission()) {
-            android.util.Log.e("RosViewModel", "GPS: No location permission")
-            addNotification("GPS: Location permission required", Severity.WARNING)
-            return
-        }
-
-        android.util.Log.i("RosViewModel", "GPS: Permission granted")
-
-        // Check location settings and prompt user if needed
-        val launcher = MainActivity.getLocationSettingsLauncher()
-        if (launcher != null) {
-            android.util.Log.i("RosViewModel", "GPS: Checking location settings")
-            gpsManager.checkLocationSettings(
-                launcher,
-                onSuccess = {
-                    android.util.Log.i("RosViewModel", "GPS: Location settings OK, starting GPS")
-                    // Settings are OK, start GPS
-                    startGpsLocationUpdates()
-                },
-                onFailure = {
-                    android.util.Log.w("RosViewModel", "GPS: Location settings check failed")
-                    // Error occurred
-                    addNotification("GPS: Location settings check failed", Severity.ERROR)
-                }
-            )
-        } else {
-            android.util.Log.w("RosViewModel", "GPS: No launcher available, trying direct start")
-            // Fallback to direct start if no launcher
-            startGpsLocationUpdates()
-        }
-    }
-
-    private fun startGpsLocationUpdates() {
-        val started = gpsManager.start()
-        if (!started) {
-            val status = gpsManager.getStatus()
-            android.util.Log.e("RosViewModel", "GPS: Failed to start, status=$status")
-            val message = when {
-                status.contains("Permission") -> "GPS: Location permission required"
-                status.contains("disabled") -> "GPS: Location services are disabled"
-                else -> "GPS: Failed to start"
-            }
-            addNotification(message, Severity.ERROR)
-        } else {
-            android.util.Log.i("RosViewModel", "GPS: Started successfully")
-        }
-    }
-
     fun onLocationSettingsEnabled() {
-        android.util.Log.i("RosViewModel", "User enabled location settings")
-
-        // If this was triggered from enableSensor, we need to complete the enable
-        // Check if GPS sensor is not yet enabled
-        val gpsSensor = _sensors.value.find { it.uniqueId == "gps_location_provider" }
-        if (gpsSensor != null && !gpsSensor.enabled) {
-            android.util.Log.i("RosViewModel", "Completing GPS sensor enable after location settings enabled")
-            NativeBridge.nativeEnableSensor("gps_location_provider")
-            refreshSensors()
-        } else {
-            // GPS was already enabled, just start updates
-            android.util.Log.i("RosViewModel", "GPS already enabled, starting location updates")
-            startGpsLocationUpdates()
-        }
+        android.util.Log.i("RosViewModel", "User enabled location settings, restarting GPS")
+        // GPS manager will handle starting location updates
+        val launcher = MainActivity.getLocationSettingsLauncher()
+        gpsManager.startWithChecks(launcher)
     }
 
     fun onLocationSettingsCancelled() {
@@ -360,48 +311,10 @@ class RosViewModel(private val applicationContext: Context) : ViewModel() {
     }
 
     fun enableSensor(uniqueId: String) {
-        android.util.Log.i("RosViewModel", "enableSensor called for: $uniqueId")
-
-        // Special handling for GPS sensor - check location settings first
-        if (uniqueId == "gps_location_provider") {
-            android.util.Log.i("RosViewModel", "GPS sensor enable requested, checking prerequisites")
-
-            // Check permission first
-            if (!MainActivity.hasLocationPermission()) {
-                android.util.Log.e("RosViewModel", "GPS: No location permission")
-                addNotification("GPS: Location permission required", Severity.WARNING)
-                return
-            }
-
-            android.util.Log.i("RosViewModel", "GPS: Permission granted, checking location settings")
-
-            // Check and prompt for location settings before enabling
-            val launcher = MainActivity.getLocationSettingsLauncher()
-            if (launcher != null) {
-                gpsManager.checkLocationSettings(
-                    launcher,
-                    onSuccess = {
-                        android.util.Log.i("RosViewModel", "GPS: Location settings OK, enabling sensor")
-                        // Settings OK, proceed with enable
-                        NativeBridge.nativeEnableSensor(uniqueId)
-                        refreshSensors()
-                    },
-                    onFailure = {
-                        android.util.Log.e("RosViewModel", "GPS: Location settings check failed")
-                        addNotification("GPS: Location settings check failed", Severity.ERROR)
-                    }
-                )
-            } else {
-                android.util.Log.w("RosViewModel", "GPS: No launcher, proceeding anyway")
-                // No launcher available, proceed anyway (GPS manager will handle it)
-                NativeBridge.nativeEnableSensor(uniqueId)
-                refreshSensors()
-            }
-        } else {
-            // Non-GPS sensors: enable directly
-            NativeBridge.nativeEnableSensor(uniqueId)
-            refreshSensors()
-        }
+        // For GPS sensor, the native callback will trigger GPS start via GpsManager
+        // For other sensors, just enable directly
+        NativeBridge.nativeEnableSensor(uniqueId)
+        refreshSensors()
     }
 
     fun disableSensor(uniqueId: String) {
@@ -410,8 +323,10 @@ class RosViewModel(private val applicationContext: Context) : ViewModel() {
     }
 
     fun onLocationPermissionGranted() {
+        android.util.Log.i("RosViewModel", "Location permission granted")
         if (_rosStarted.value && !gpsManager.isRunning()) {
-            tryStartGps()
+            val launcher = MainActivity.getLocationSettingsLauncher()
+            gpsManager.startWithChecks(launcher)
         }
     }
 

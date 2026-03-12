@@ -24,7 +24,10 @@ import com.google.android.gms.location.SettingsClient
 
 /**
  * Manages GPS location updates using FusedLocationProviderClient
- * and forwards them to native code for ROS publishing
+ * and forwards them to native code for ROS publishing.
+ *
+ * Fully encapsulates GPS logic including permission checks, settings verification,
+ * and user prompts. Exposes simple start()/stop() interface with callbacks.
  */
 class GpsManager(private val context: Context) {
     private val tag = "GpsManager"
@@ -37,15 +40,80 @@ class GpsManager(private val context: Context) {
     private var isStarted = false
     private var locationRequest: LocationRequest? = null
 
+    // Callbacks for external coordination
+    private var onError: ((String) -> Unit)? = null
+    private var onPermissionNeeded: (() -> Unit)? = null
+    private var onSettingsNeeded: ((ActivityResultLauncher<IntentSenderRequest>) -> Unit)? = null
+
     companion object {
         const val REQUEST_CHECK_SETTINGS = 1001
     }
 
     /**
-     * Check if location settings are sufficient and prompt user to enable if not
-     * Call this before start() to give user a chance to enable location
+     * Set callbacks for error reporting and permission/settings requests
      */
-    fun checkLocationSettings(
+    fun setCallbacks(
+        onError: (String) -> Unit,
+        onPermissionNeeded: () -> Unit,
+        onSettingsNeeded: (ActivityResultLauncher<IntentSenderRequest>) -> Unit
+    ) {
+        this.onError = onError
+        this.onPermissionNeeded = onPermissionNeeded
+        this.onSettingsNeeded = onSettingsNeeded
+    }
+
+    /**
+     * Start GPS with automatic permission and settings checks.
+     * This is the primary entry point for starting GPS.
+     *
+     * If permissions are missing, calls onPermissionNeeded callback.
+     * If settings need adjustment, calls onSettingsNeeded callback with launcher.
+     * If any error occurs, calls onError callback.
+     * If successful, starts location updates immediately.
+     */
+    fun startWithChecks(launcher: ActivityResultLauncher<IntentSenderRequest>?): Boolean {
+        Log.i(tag, "startWithChecks() called")
+
+        // Check permission first
+        if (!hasLocationPermission()) {
+            Log.w(tag, "No location permission, requesting...")
+            onPermissionNeeded?.invoke()
+            return false
+        }
+
+        // Check location settings
+        if (launcher != null) {
+            checkLocationSettings(
+                launcher,
+                onSuccess = {
+                    Log.i(tag, "Settings OK, starting GPS")
+                    if (!start()) {
+                        onError?.invoke("Failed to start GPS location updates")
+                    }
+                },
+                onFailure = {
+                    Log.e(tag, "Settings check failed")
+                    onError?.invoke("GPS: Location settings check failed")
+                }
+            )
+            return true // Will start asynchronously if settings are OK
+        } else {
+            // No launcher, try direct start
+            Log.w(tag, "No settings launcher, attempting direct start")
+            return if (start()) {
+                true
+            } else {
+                onError?.invoke(getStatus())
+                false
+            }
+        }
+    }
+
+    /**
+     * Check if location settings are sufficient and prompt user to enable if not
+     * Internal method used by startWithChecks()
+     */
+    private fun checkLocationSettings(
         launcher: ActivityResultLauncher<IntentSenderRequest>,
         onSuccess: () -> Unit,
         onFailure: () -> Unit
