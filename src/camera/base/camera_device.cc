@@ -1,6 +1,6 @@
 #include "camera/base/camera_device.h"
 
-#include <chrono> // Debugging processing time
+#include <libyuv.h>
 
 #include "core/notification_queue.h"
 
@@ -40,7 +40,8 @@ void OnImage(void *context, AImageReader *reader)
   AImage *cimage = nullptr;
   auto status = AImageReader_acquireNextImage(reader, &cimage);
 
-  if (status != AMEDIA_OK) {
+  if (status != AMEDIA_OK)
+  {
     LOGW("Failed to acquire image, status: %d", status);
     return;
   }
@@ -117,7 +118,6 @@ std::unique_ptr<CameraDevice> CameraDevice::OpenCamera(
     LOGW("Failed to open camera %s, %d", camera_id, result);
     return nullptr;
   }
-  LOGI("XXX I opened a camera!");
 
   // Open image reader to get camera data
   constexpr int max_simultaneous_images = 1;
@@ -179,7 +179,6 @@ void CameraDevice::ProcessImages()
 {
   while (!shutdown_.load())
   {
-    auto dbg_start = std::chrono::high_resolution_clock::now();
     std::unique_ptr<AImage, AImageDeleter> image;
     {
       // Wait for next image, or shutdown
@@ -192,32 +191,30 @@ void CameraDevice::ProcessImages()
     }
     if (nullptr != image.get())
     {
-      auto image_msg = std::make_unique<sensor_msgs::msg::Image>();
-      // Plane 0: Y
-      // Plane 1: U (Cb)
-      // Plane 2: V (Cr)
-      // U/V planes guaranteed to have same row and pixel stride
-
-      // Y plane guaranteed stride of 1
-      constexpr int32_t y_pixel_stride = 1;
-      const int32_t y_row_stride = width_;
-
+      // Get YUV plane metadata
+      int32_t y_row_stride;
       int32_t uv_pixel_stride;
       int32_t uv_row_stride;
 
-      if (AMEDIA_OK !=
-          AImage_getPlanePixelStride(image.get(), 1, &uv_pixel_stride))
+      if (AMEDIA_OK != AImage_getPlaneRowStride(image.get(), 0, &y_row_stride))
+      {
+        LOGW("Unable to get Y plane row stride");
+        continue;
+      }
+
+      if (AMEDIA_OK != AImage_getPlanePixelStride(image.get(), 1, &uv_pixel_stride))
       {
         LOGW("Unable to get U/V plane pixel stride");
         continue;
       }
-      if (AMEDIA_OK !=
-          AImage_getPlaneRowStride(image.get(), 1, &uv_row_stride))
+
+      if (AMEDIA_OK != AImage_getPlaneRowStride(image.get(), 1, &uv_row_stride))
       {
         LOGW("Unable to get U/V plane row stride");
         continue;
       }
 
+      // Get YUV plane data pointers
       uint8_t *y_data = nullptr;
       uint8_t *u_data = nullptr;
       uint8_t *v_data = nullptr;
@@ -230,90 +227,74 @@ void CameraDevice::ProcessImages()
         LOGW("Unable to get Y plane data");
         continue;
       }
+
       if (AMEDIA_OK != AImage_getPlaneData(image.get(), 1, &u_data, &u_len))
       {
         LOGW("Unable to get U plane data");
         continue;
       }
+
       if (AMEDIA_OK != AImage_getPlaneData(image.get(), 2, &v_data, &v_len))
       {
         LOGW("Unable to get V plane data");
         continue;
       }
 
-      image_msg->width = width_;
-      image_msg->height = height_;
-      image_msg->encoding = "rgb8";
-      image_msg->step = width_ * 3;
-      image_msg->data.resize(image_msg->step * image_msg->height);
+      // Convert YUV420 to RGB24 using libyuv (SIMD-optimized)
+      std::vector<uint8_t> rgb_buffer(width_ * height_ * 3);
 
-      // YUV420 to RGB888
-      // https://blog.minhazav.dev/how-to-convert-yuv-420-sp-android.media.Image-to-Bitmap-or-jpeg
-      size_t byte = 0;
-      for (int h = 0; h < height_; ++h)
+      // Detect YUV format and convert to RGB24
+      int result;
+      if (uv_pixel_stride == 2)
       {
-        // U/V are subsampled
-        const int uvh = h / 2;
-        for (int w = 0; w < width_; ++w)
+        // NV12 or NV21 (semi-planar with interleaved UV)
+        uint8_t *uv_data = (u_data < v_data) ? u_data : v_data;
+        bool is_nv12 = (u_data < v_data);
+
+        if (is_nv12)
         {
-          // U/V are subsampled
-          const int uvw = w / 2;
-          const size_t y_idx = h * y_row_stride + w * y_pixel_stride;
-          const size_t uv_idx = uvh * uv_row_stride + uvw * uv_pixel_stride;
-          // LOGI("y_idx %lu uv_idx %lu y_len %d, u_len %d, v_len %d", y_idx,
-          // uv_idx, y_len, u_len, v_len); continue; // XXX
-
-          const uint8_t y = y_data[y_idx];
-          const uint8_t u = u_data[uv_idx];
-          const uint8_t v = v_data[uv_idx];
-
-          int r = y + (1.370705 * (v - 128));
-          int g = y - (0.698001 * (v - 128)) - (0.337633 * (u - 128));
-          ;
-          int b = y + (1.732446 * (u - 128));
-
-          if (r < 0)
-          {
-            r = 0;
-          }
-          else if (r > 255)
-          {
-            r = 255;
-          }
-          if (g < 0)
-          {
-            g = 0;
-          }
-          else if (g > 255)
-          {
-            g = 255;
-          }
-          if (b < 0)
-          {
-            b = 0;
-          }
-          else if (b > 255)
-          {
-            b = 255;
-          }
-          image_msg->data[byte++] = r;
-          image_msg->data[byte++] = g;
-          image_msg->data[byte++] = b;
+          result = libyuv::NV12ToRGB24(
+              y_data, y_row_stride,
+              uv_data, uv_row_stride,
+              rgb_buffer.data(), width_ * 3,
+              width_, height_);
+        }
+        else
+        {
+          result = libyuv::NV21ToRGB24(
+              y_data, y_row_stride,
+              uv_data, uv_row_stride,
+              rgb_buffer.data(), width_ * 3,
+              width_, height_);
         }
       }
+      else
+      {
+        // I420/YV12 (planar with separate U and V planes)
+        result = libyuv::I420ToRGB24(
+            y_data, y_row_stride,
+            u_data, uv_row_stride,
+            v_data, uv_row_stride,
+            rgb_buffer.data(), width_ * 3,
+            width_, height_);
+      }
 
-      // TODO Emit data for publisher
-      auto dbg_process_end = std::chrono::high_resolution_clock::now();
-      LOGI("About to emit image data");
-      Emit({std::make_unique<CameraInfo>(), std::move(image_msg)});
-      LOGI("Emit completed");
-      auto dbg_emit_end = std::chrono::high_resolution_clock::now();
-      auto dbg_process = std::chrono::duration_cast<std::chrono::milliseconds>(
-          dbg_process_end - dbg_start);
-      auto dbg_emit = std::chrono::duration_cast<std::chrono::milliseconds>(
-          dbg_emit_end - dbg_process_end);
-      LOGI("Image processing time: %lld emit time: %lld", dbg_process.count(),
-           dbg_emit.count());
+      if (result != 0)
+      {
+        LOGW("libyuv YUV->RGB24 conversion failed with code %d", result);
+        continue;
+      }
+
+      // Create ROS2 Image message with BGR8 encoding (libyuv RGB24 outputs BGR)
+      auto image_msg = std::make_unique<sensor_msgs::msg::Image>();
+      image_msg->width = width_;
+      image_msg->height = height_;
+      image_msg->encoding = "bgr8";
+      image_msg->step = width_ * 3;
+      image_msg->data = std::move(rgb_buffer);
+
+      auto camera_info = std::make_unique<CameraInfo>();
+      Emit({std::move(camera_info), std::move(image_msg)});
     }
   }
   LOGI("Camera device ProcessImages shutting down");

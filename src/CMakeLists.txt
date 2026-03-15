@@ -8,6 +8,10 @@ find_package(rclcpp_lifecycle REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 
+# Find libyuv
+find_path(LIBYUV_INCLUDE_DIR libyuv.h)
+find_library(LIBYUV_LIBRARY yuv)
+
 set(CMAKE_VERBOSE_MAKEFILE ON)
 
 add_library(android-ros SHARED
@@ -61,9 +65,11 @@ target_link_libraries(android-ros PRIVATE
     jnigraphics
     rclcpp::rclcpp
     ${geometry_msgs_TARGETS}
-    ${sensor_msgs_TARGETS})
+    ${sensor_msgs_TARGETS}
+    ${LIBYUV_LIBRARY})
 target_include_directories(android-ros PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>)
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    ${LIBYUV_INCLUDE_DIR})
 # LTO to reduce APK size
 set_property(TARGET android-ros PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
 

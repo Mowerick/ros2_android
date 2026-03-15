@@ -1,5 +1,6 @@
 #include "jni/bitmap_utils.h"
 #include <android/bitmap.h>
+#include <cstring>
 #include "core/log.h"
 
 namespace ros2_android {
@@ -84,21 +85,12 @@ jobject CreateBitmapFromRGB(JNIEnv* env,
         return nullptr;
     }
 
-    // Convert RGB24 to ARGB8888
-    // RGB24: [R G B] [R G B] [R G B] ...
-    // ARGB8888 on little-endian: memory layout is [B G R A], but as uint32_t it's 0xAARRGGBB
-    // Since we're writing to memory as uint32_t on little-endian, we need to pack as 0xAARRGGBB
-    // But Android expects BGRA in memory, so we swap R and B in the bit packing
-    uint32_t* dst = static_cast<uint32_t*>(pixels);
-    const int pixel_count = width * height;
-
-    for (int i = 0; i < pixel_count; ++i) {
-        const uint8_t r = data[i * 3];
-        const uint8_t g = data[i * 3 + 1];
-        const uint8_t b = data[i * 3 + 2];
-        // Pack as ABGR (which becomes BGRA in memory on little-endian)
-        dst[i] = 0xFF000000 | (b << 16) | (g << 8) | r;
-    }
+    // Data is in RGBA8 format: [R G B A] [R G B A] ...
+    // Android ARGB_8888 bitmap expects BGRA ordering in little-endian memory
+    // Direct memcpy works because RGBA in memory becomes ABGR in 32-bit word (little-endian)
+    // which Android interprets as ARGB_8888
+    const int byte_count = width * height * 4;
+    std::memcpy(pixels, data, byte_count);
 
     AndroidBitmap_unlockPixels(env, bitmap);
 

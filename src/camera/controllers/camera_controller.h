@@ -61,9 +61,7 @@ class CameraController : public SensorDataProvider {
   Publisher<sensor_msgs::msg::Image> image_pub_;
 
   std::mutex frame_mutex_;
-  std::vector<uint8_t> last_frame_;
-  int frame_width_ = 0;
-  int frame_height_ = 0;
+  std::vector<uint8_t> last_frame_;  // Raw RGBA frame data
 };
 
 }  // namespace ros2_android

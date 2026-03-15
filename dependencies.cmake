@@ -13,6 +13,11 @@ macro(build_crosscompile_dependencies)
   set(extra_cmake_args ${android_cmake_args})
   list(APPEND extra_cmake_args -DBUILD_SHARED_LIBS=OFF)
 
+  # libyuv - optimized YUV conversion library
+  dep_build(libyuv CMAKE
+    SOURCE_DIR "deps/libyuv"
+    CMAKE_ARGS ${extra_cmake_args})
+
   dep_build(ament_index_python PIP
     SOURCE_DIR "deps/ament_index/ament_index_python"
     DEPENDENCIES )

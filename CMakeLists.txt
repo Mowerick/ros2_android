@@ -60,6 +60,7 @@ ExternalProject_Add(ros_for_android
   deps-rclcpp_lifecycle
   deps-std_msgs
   deps-sensor_msgs
+  deps-libyuv
   CMAKE_ARGS
   ${android_cmake_args}
   "-DCMAKE_FIND_ROOT_PATH=${CMAKE_CURRENT_BINARY_DIR}/deps"
@@ -99,6 +100,7 @@ stage_lib(ros_for_android "ros_for_android/lib/libandroid-ros.so")
 stage_lib(deps-cyclonedds "deps/lib/libddsc.so")
 stage_lib(deps-rmw_dds_common "deps/lib/librmw_dds_common.so")
 stage_lib(deps-libyaml_vendor "deps/lib/libyaml.so")
+stage_lib(deps-libyuv "deps/lib/libyuv.so")
 
 add_custom_target(stage_jniLibs ALL
   DEPENDS ${staged_libs})

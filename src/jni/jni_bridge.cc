@@ -664,16 +664,16 @@ extern "C"
       return nullptr;
 
     const char *id = env->GetStringUTFChars(unique_id, nullptr);
-    std::vector<uint8_t> data;
+    std::vector<uint8_t> rgba_data;
     int width = 0, height = 0;
-    bool ok = g_app->GetCameraFrameBytes(std::string(id), data, width, height);
+    bool ok = g_app->GetCameraFrameBytes(std::string(id), rgba_data, width, height);
     env->ReleaseStringUTFChars(unique_id, id);
 
-    if (!ok || data.empty())
+    if (!ok || rgba_data.empty())
       return nullptr;
 
-    // Use bitmap utility to create Android Bitmap directly
-    return ros2_android::jni::CreateBitmapFromRGB(env, data.data(), width, height);
+    // Create bitmap from RGBA data
+    return ros2_android::jni::CreateBitmapFromRGB(env, rgba_data.data(), width, height);
   }
 
   JNIEXPORT jstring JNICALL

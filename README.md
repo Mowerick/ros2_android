@@ -243,7 +243,6 @@ The app publishes ROS 2 topics that can be discovered and inspected from a compa
 **Required environment setup:**
 
 ```bash
-export CYCLONEDDS_URI=file://<path_to_project>/config/cyclonedds.xml
 export ROS_DOMAIN_ID=1
 ```
 
@@ -330,13 +329,10 @@ adb shell ip addr show wlan0 | grep inet
 Set the DDS configuration and domain ID to match the Android app:
 
 ```bash
-export CYCLONEDDS_URI=file://<path_to_project>/config/cyclonedds.xml
 export ROS_DOMAIN_ID=1
 ```
 
 Replace `<path_to_project>` with the absolute path to this repository (e.g., `/home/user/ros2_android`).
-
-**Edit `config/cyclonedds.xml`** to specify your host's network interface (replace `enp39s0` with your interface name from `ip link show`):
 
 ```xml
 <NetworkInterfaceAddress>enp39s0</NetworkInterfaceAddress>
@@ -384,8 +380,8 @@ In the GUI, select the topic `/camera/front/image_color` from the dropdown. The 
 
 ### Other Available Topics
 
-- **Sensor data**: `/sensors/accel`, `/sensors/gyro`, `/sensors/mag`, `/sensors/baro`, `/sensors/illuminance`
-- **Camera info**: `/camera/front/camera_info` (contains intrinsic calibration parameters)
+- **Sensor data**: `/accelerometer`, `/gyroscope`, `/magnetometer`, `/barometer`, `/illuminance`, `/gps`
+- **Camera info**: `/camera/front/camera_info`, `/camera/back/camera_info`, `/camera/back/image_color` (contains intrinsic calibration parameters)
 
 Echo a topic to inspect data:
 
