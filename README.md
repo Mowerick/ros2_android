@@ -358,22 +358,56 @@ Measure message publication rate:
 ros2 topic hz /camera/front/image_color
 ```
 
-### Visualizing Camera Feed
+### Testing Built-in Sensors
 
-Use `rqt_image_view` to display the camera stream from the Android device:
+#### Network Prerequisites
+
+> [!IMPORTANT]
+> Multicast must be enabled for DDS discovery to work between the Android device and your laptop/PC.
+
+Execute the following commands on your testing machine to allow IGMP (multicast group joins) and UDP packets:
+
+```bash
+sudo iptables -I INPUT 1 -p igmp -j ACCEPT
+sudo iptables -I INPUT 1 -p udp -d 224.0.0.0/4 -j ACCEPT
+sudo iptables -I INPUT 1 -p udp -s <source_ip> -j ACCEPT
+sudo iptables -L INPUT -v -n --line-numbers
+```
+
+> [!TIP]
+> Replace `<source_ip>` with your Android device's IP address.
+
+#### Testing Cameras (Front and Rear)
+
+**Required ROS 2 Humble packages** on your testing machine:
+
+```bash
+sudo apt install ros-humble-rqt-image-view ros-humble-image-transport ros-humble-compressed-image-transport
+```
+
+**Launch the image viewer:**
 
 ```bash
 ros2 run rqt_image_view rqt_image_view
 ```
 
-In the GUI, select the topic `/camera/front/image_color` from the dropdown. The video feed should appear in real-time.
+**Available topics:**
+
+- `/camera/front/image_color` - Front camera (raw BGR8)
+- `/camera/front/image_color/compressed` - Front camera (JPEG)
+- `/camera/back/image_color` - Rear camera (raw BGR8)
+- `/camera/back/image_color/compressed` - Rear camera (JPEG)
+
+> [!WARNING]
+> Switching between compressed and raw topics (or vice versa) congests the DDS participant. For a smooth camera feed, **restart the publisher** (toggle the camera off and on in the app) after changing topics in rqt_image_view.
 
 **Troubleshooting:**
 
 - **No topics visible**: Check that `ROS_DOMAIN_ID` matches on both devices (default is 1 in the app).
 - **Topics listed but no data**: Camera may not be active in the app. Start the camera publisher from the UI.
-- **High latency**: Camera images are large (~1-3 MB/frame). Ensure both devices are on 5 GHz WiFi or wired Ethernet.
+- **High latency**: Camera images are large (~1-3 MB/frame for raw, 50-100 KB for compressed). Ensure both devices are on 5 GHz WiFi or wired Ethernet.
 - **QoS mismatch**: The camera publisher uses `best_effort` reliability. Subscribers must match:
+
   ```bash
   ros2 topic echo /camera/front/image_color --qos-reliability best_effort
   ```

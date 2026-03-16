@@ -13,8 +13,8 @@ using ros2_android::CameraDevice;
 using ros2_android::NotificationSeverity;
 using ros2_android::PostNotification;
 using sensor_msgs::msg::CameraInfo;
-using sensor_msgs::msg::Image;
 using sensor_msgs::msg::CompressedImage;
+using sensor_msgs::msg::Image;
 
 CameraController::CameraController(CameraManager *camera_manager,
                                    const CameraDescriptor &camera_descriptor,
@@ -35,7 +35,12 @@ CameraController::CameraController(CameraManager *camera_manager,
   compressed_image_pub_.SetTopic(compressed_image_topic.c_str());
 
   // Use BEST_EFFORT QoS for all topics (standard for camera streaming)
-  auto qos = rclcpp::QoS(1).best_effort();
+  // KeepLast(1): Only keep most recent message, drop old ones
+  // BestEffort: Don't wait for delivery confirmation, drop if congested
+  // Volatile: Don't store historical data for late joiners
+  auto qos = rclcpp::QoS(rclcpp::KeepLast(1))
+                 .best_effort()
+                 .durability_volatile();
   info_pub_.SetQos(qos);
   image_pub_.SetQos(qos);
   compressed_image_pub_.SetQos(qos);
@@ -161,13 +166,13 @@ void CameraController::OnImage(
             compressor,
             rgb_data.data(),
             width,
-            width * 3,           // pitch (bytes per row)
+            width * 3, // pitch (bytes per row)
             height,
             TJPF_RGB,
             &jpeg_buf,
             &jpeg_size,
-            TJSAMP_420,          // 4:2:0 chroma subsampling
-            80,                  // quality (0-100)
+            TJSAMP_420, // 4:2:0 chroma subsampling
+            85,         // quality (0-100)
             TJFLAG_FASTDCT);
 
         if (tj_result == 0)
@@ -211,13 +216,13 @@ void CameraController::OnImage(
       inverse_rotation = libyuv::kRotate0;
       break;
     case 90:
-      inverse_rotation = libyuv::kRotate270;  // undo 90° CW with 270° CW (= 90° CCW)
+      inverse_rotation = libyuv::kRotate270; // undo 90° CW with 270° CW (= 90° CCW)
       break;
     case 180:
-      inverse_rotation = libyuv::kRotate180;  // undo 180° with 180°
+      inverse_rotation = libyuv::kRotate180; // undo 180° with 180°
       break;
     case 270:
-      inverse_rotation = libyuv::kRotate90;   // undo 270° CW with 90° CW (= 270° CCW)
+      inverse_rotation = libyuv::kRotate90; // undo 270° CW with 90° CW (= 270° CCW)
       break;
     default:
       inverse_rotation = libyuv::kRotate0;
@@ -241,7 +246,7 @@ void CameraController::OnImage(
   }
 
   // Trigger callback to notify UI of new camera frame (throttled to 10 Hz)
-  ros2_android::PostCameraFrameUpdate(std::string(static_cast<const SensorDataProvider*>(this)->UniqueId()));
+  ros2_android::PostCameraFrameUpdate(std::string(static_cast<const SensorDataProvider *>(this)->UniqueId()));
 }
 
 bool CameraController::GetLastFrame(std::vector<uint8_t> &out_data,

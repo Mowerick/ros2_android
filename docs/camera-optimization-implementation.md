@@ -312,87 +312,146 @@ image_pub_.SetQos(rclcpp::QoS(1).best_effort());
 ros2 run rqt_image_view rqt_image_view --ros-args -p qos_reliability:=best_effort
 ```
 
-## Phase 2: Bandwidth Optimization (Pending)
+## Phase 2: Bandwidth Optimization (Implemented)
 
-Current bandwidth usage: **27 MB/s at 30 FPS** (900KB × 30). WiFi streaming can be unreliable at this rate.
+Current bandwidth usage: **27 MB/s at 30 FPS** (900KB × 30) for raw topics. WiFi streaming can be unreliable at this rate.
 
-### Recommended: Dual-Topic Publishing with JPEG Compression
+### Dual-Topic Publishing with JPEG Compression ✅
 
-**Goal**: Publish both raw and compressed topics simultaneously for maximum flexibility.
+**Status**: **Implemented** - Both raw and compressed topics are published simultaneously.
 
-**Implementation Strategy**:
+**Implementation**:
 
-1. **Keep existing raw topics** for local/low-latency use cases:
+1. **Raw topics** for local/low-latency use cases:
    - `/camera/front/image_color` - BGR8, 900KB/frame
-   - `/camera/back/image_color` - BGR8, 900KB/frame
+   - `/camera/rear/image_color` - BGR8, 900KB/frame
 
-2. **Add compressed topics** for bandwidth-constrained scenarios:
+2. **Compressed topics** for bandwidth-constrained scenarios:
    - `/camera/front/image_color/compressed` - JPEG, 50-100KB/frame
-   - `/camera/back/image_color/compressed` - JPEG, 50-100KB/frame
+   - `/camera/rear/image_color/compressed` - JPEG, 50-100KB/frame
 
-**Code Changes Required**:
+**Code Location** (`camera_controller.h:64-66`):
 
 ```cpp
-// In camera_controller.h - Add second publisher per camera
-Publisher<sensor_msgs::msg::Image> image_pub_;              // Existing raw
-Publisher<sensor_msgs::msg::CompressedImage> image_compressed_pub_;  // New
-
-// In OnImage() - Publish to both when enabled
-if (image_pub_.Enabled()) {
-    image_pub_.Publish(*info_image.second.get());  // Raw BGR8
-}
-if (image_compressed_pub_.Enabled()) {
-    auto compressed = std::make_unique<sensor_msgs::msg::CompressedImage>();
-    compressed->header = info_image.second->header;
-    compressed->format = "jpeg";
-    EncodeJPEG(info_image.second->data, width, height, compressed->data);
-    image_compressed_pub_.Publish(*compressed);
-}
+Publisher<sensor_msgs::msg::CameraInfo> info_pub_;
+Publisher<sensor_msgs::msg::Image> image_pub_;              // Raw BGR8
+Publisher<sensor_msgs::msg::CompressedImage> compressed_image_pub_;  // JPEG
 ```
 
-**JPEG Encoding** (use libjpeg-turbo for NEON-optimized compression):
+**Publishing Logic** (`camera_controller.cc:129-192`):
 
 ```cpp
-#include <turbojpeg.h>
+// Publish raw image if there are subscribers
+if (image_pub_.Enabled())
+{
+  size_t image_subscribers = image_pub_.GetSubscriberCount();
+  if (image_subscribers > 0)
+  {
+    image_pub_.Publish(*info_image.second.get());
+  }
+}
 
-void EncodeJPEG(const std::vector<uint8_t>& bgr_data, int width, int height,
-                std::vector<uint8_t>& jpeg_out) {
+// Publish compressed image if there are subscribers
+if (compressed_image_pub_.Enabled())
+{
+  size_t compressed_image_subscribers = compressed_image_pub_.GetSubscriberCount();
+  if (compressed_image_subscribers > 0)
+  {
+    const auto &bgr_data = info_image.second->data;
+    int width = info_image.second->width;
+    int height = info_image.second->height;
+
+    // Convert BGR to RGB for JPEG encoding
+    std::vector<uint8_t> rgb_data(width * height * 3);
+    for (size_t i = 0; i < bgr_data.size(); i += 3)
+    {
+      rgb_data[i] = bgr_data[i + 2];     // R
+      rgb_data[i + 1] = bgr_data[i + 1]; // G
+      rgb_data[i + 2] = bgr_data[i];     // B
+    }
+
+    // Compress to JPEG using TurboJPEG
     tjhandle compressor = tjInitCompress();
-    unsigned char* jpeg_buf = nullptr;
-    unsigned long jpeg_size = 0;
+    if (compressor)
+    {
+      unsigned char *jpeg_buf = nullptr;
+      unsigned long jpeg_size = 0;
 
-    // Compress BGR to JPEG (quality 85, 4:2:0 chroma subsampling)
-    tjCompress2(compressor, bgr_data.data(), width, width * 3, height,
-                TJPF_BGR, &jpeg_buf, &jpeg_size, TJSAMP_420, 85, TJFLAG_FASTDCT);
+      int tj_result = tjCompress2(
+          compressor,
+          rgb_data.data(),
+          width,
+          width * 3, // pitch (bytes per row)
+          height,
+          TJPF_RGB,
+          &jpeg_buf,
+          &jpeg_size,
+          TJSAMP_420, // 4:2:0 chroma subsampling
+          85,         // quality (0-100)
+          TJFLAG_FASTDCT);
 
-    jpeg_out.assign(jpeg_buf, jpeg_buf + jpeg_size);
-    tjFree(jpeg_buf);
-    tjDestroy(compressor);
+      if (tj_result == 0)
+      {
+        auto compressed_msg = std::make_unique<CompressedImage>();
+        compressed_msg->header = info_image.second->header;
+        compressed_msg->format = "jpeg";
+        compressed_msg->data.assign(jpeg_buf, jpeg_buf + jpeg_size);
+        compressed_image_pub_.Publish(*compressed_msg);
+      }
+
+      if (jpeg_buf)
+        tjFree(jpeg_buf);
+      tjDestroy(compressor);
+    }
+  }
 }
 ```
 
-**Expected Performance Impact**:
+**JPEG Encoding Details**:
+- Library: TurboJPEG (libjpeg-turbo)
+- Quality: 85 (0-100 scale)
+- Chroma subsampling: 4:2:0 (standard for photos/video)
+- Fast DCT algorithm for speed
+- NEON-optimized on ARM64
+
+**Performance Impact**:
 
 | Metric | Raw Topic | Compressed Topic | Savings |
 |--------|-----------|------------------|---------|
 | Size/frame | 900 KB | 50-100 KB | **90%** |
 | Bandwidth (30 FPS) | 27 MB/s | 3 MB/s | **89%** |
-| Encoding time | 7ms (YUV→BGR) | 12ms (YUV→BGR→JPEG) | +5ms |
-| Total latency | 20ms | 25ms | +5ms |
+| BGR→RGB conversion | - | ~2ms | Inline loop |
+| JPEG compression | - | ~5ms | TurboJPEG NEON |
+| Total publish time | 8-10ms | 7-8ms | Similar (smaller payload) |
 | Use case | Local tools | WiFi streaming, YOLO | - |
 
-**Benefits of Dual Publishing**:
+**Benefits**:
 - Local subscribers (rqt_image_view) can use raw for lowest latency
 - Remote subscribers (YOLO on PC) can use compressed to reduce WiFi load
 - Standard ROS2 topic naming convention (`/topic/compressed`)
-- No subscriber-side configuration needed
-- Both cameras can publish independently
+- Both topics use same QoS settings (best-effort, keep-last-1)
+- Independent subscriber counts - only publishes when subscribed
+- Both cameras publish independently
 
 **Dependencies**:
-- Add libjpeg-turbo to build (already NEON-optimized)
+- TurboJPEG (libjpeg-turbo) - already integrated
 - ~100KB APK size increase
 
-**Estimated Implementation Time**: 2-3 hours
+**Subscriber Usage**:
+
+Both topics use **best-effort** QoS, so subscribers must match:
+
+```bash
+# Raw topic
+ros2 run rqt_image_view rqt_image_view \
+  --ros-args -p image_topic:=/camera/front/image_color \
+  -p qos_reliability:=best_effort
+
+# Compressed topic (recommended for WiFi)
+ros2 run rqt_image_view rqt_image_view \
+  --ros-args -p image_topic:=/camera/front/image_color/compressed \
+  -p qos_reliability:=best_effort
+```
 
 ---
 
@@ -408,6 +467,134 @@ void EncodeJPEG(const std::vector<uint8_t>& bgr_data, int width, int height,
 - Requires: Subscriber-side ffmpeg_image_transport plugin
 
 **Trade-offs**: Higher latency makes this unsuitable for real-time object detection. JPEG compression (Phase 2) is better balance.
+
+## Known Issues and Limitations
+
+### DDS Participant-Level Flow Control and Permanent Throttling
+
+**Problem**: When switching from compressed to raw image topics and back over WiFi, publishing performance degrades permanently until camera is disabled and re-enabled.
+
+**Observed Behavior**:
+- Raw image publishing (900KB frames) over WiFi causes `publish()` to block for 70-130ms
+- After switching back to compressed topics, publishing remains slow (~130ms vs normal ~30ms)
+- Throttling persists even with zero subscribers
+- Only resolved by disabling and re-enabling the camera device
+
+**Root Cause**: DDS Participant-Level Flow Control
+
+1. **Single Processing Thread**: Camera capture, YUV conversion, publishing, and UI preview all execute on one thread
+2. **Blocking Publish**: `publisher_->publish()` is synchronous and blocks when network is congested
+3. **Writer History Cache (WHC)**: Each DDS writer maintains unacknowledged samples for potential retransmission
+4. **Watermark Throttling**: When WHC exceeds `WhcHigh` bytes, writer stalls until it drops below `WhcLow`
+5. **Adaptive Watermarks**: `WhcAdaptive=true` (default) dynamically lowers watermarks based on network congestion
+6. **Shared DDS Participant**: All publishers on same ROS node share one DDS participant with shared flow control state
+
+**Why It Persists**:
+- When 900KB raw frames congest WiFi, DDS detects high transmit pressure and retransmit requests
+- Adaptive watermarks lower `WhcHigh` to throttle the publisher
+- This throttling state persists in the DDS participant even after:
+  - Unsubscribing from raw topic
+  - Switching to compressed topic
+  - Having zero subscribers
+- The participant "remembers" the congested network state
+- Only destroying the camera device (which destroys all publishers) clears the state
+
+**Why Topic Switching Triggers It**:
+- Dual publishing means both raw and compressed are sent simultaneously when both have subscribers
+- Even briefly publishing 900KB frames triggers congestion detection
+- Once triggered, the adaptive throttling affects all future publishing on that participant
+
+**Technical Details**:
+
+From Cyclone DDS documentation:
+- **Writer History Cache (WHC)**: Stores unacknowledged samples per writer
+- **WhcHigh**: Maximum bytes in WHC before writer stalls (default: adaptive)
+- **WhcLow**: Resume threshold after stall (default: adaptive)
+- **WhcAdaptive**: Dynamically adjusts watermarks based on transmit pressure and retransmit requests (default: true)
+
+Flow control hierarchy:
+```
+DDS Participant (per ROS node)
+  └─> Publishers (camera_info, raw image, compressed image)
+      └─> DataWriters (individual WHC, shared flow control state)
+```
+
+**Attempted Solutions** (all failed):
+
+1. ❌ **QoS Tuning** - Added `durability_volatile()` to QoS settings
+   - Result: No effect, flow control is at participant level
+
+2. ❌ **Publisher Reset** - Destroy and recreate publishers when subscriber count changes
+   - Result: New publishers still use same throttled participant
+
+3. ❌ **Compressed-Prefer Logic** - Skip raw if compressed has subscribers
+   - Result: Damage already done during topic switch transition
+
+4. ❌ **Debouncing** - Delay publishing after subscriber changes
+   - Result: Doesn't prevent initial congestion from occurring
+
+5. ❌ **Disable Adaptive Watermarks** - Add `<WhcAdaptive>false</WhcAdaptive>` to Cyclone DDS XML config
+   - Result: XML with `<Internal><Watermarks>` section at Domain level causes DDS initialization to fail with "failed to create domain, error Error"
+   - Technical reason: `<Internal>` section placement in XML was invalid for Domain scope
+
+**Why Configuration Approach Failed**:
+
+Attempted to add watermark configuration to `cyclonedds.xml`:
+```xml
+<Domain id="any">
+  <General>...</General>
+  <Internal>
+    <Watermarks>
+      <WhcAdaptive>false</WhcAdaptive>
+      <WhcHigh>10485760</WhcHigh>
+      <WhcLow>1048576</WhcLow>
+    </Watermarks>
+  </Internal>
+</Domain>
+```
+
+Error: `rmw_cyclonedds_cpp: rmw_create_node: failed to create domain, error Error`
+
+The `<Internal>` section placement at Domain level is not valid in Cyclone DDS configuration schema. Watermark settings may need to be at a different scope or require different XML structure. Further investigation into correct Cyclone DDS configuration schema would be needed, but this approach was abandoned in favor of accepting current behavior.
+
+**Solutions That Would Work** (not implemented due to architectural complexity):
+
+1. ✅ **Separate DDS Domain** - Use different domain ID for camera publishers
+   - Isolates flow control state completely
+   - Requires subscribers to join multiple domains
+
+2. ✅ **Separate ROS Node** - Create dedicated node for camera publishing
+   - Each node gets own DDS participant
+   - Requires additional node lifecycle management
+
+3. ✅ **Separate Process** - Run camera publishers in dedicated process
+   - Complete isolation, independent flow control
+   - Requires IPC mechanism between processes
+
+4. ✅ **Async Publishing Thread** - Non-blocking publish with backpressure handling
+   - Prevents main thread from blocking
+   - Requires thread-safe queue and frame dropping logic
+
+**Recommended Workaround**:
+
+**Use compressed topics exclusively for WiFi streaming**. The compressed JPEG topics work reliably at ~30ms publish time with 50-100KB per frame. Only use raw topics when:
+- Connected via wired network (lower latency, higher bandwidth)
+- Subscriber is on same device (no network congestion)
+- Willing to disable/enable camera after switching topics
+
+**Performance Comparison**:
+
+| Scenario | Publish Time | Bandwidth | Result |
+|----------|--------------|-----------|--------|
+| Compressed only | ~30ms | 3 MB/s | ✅ Stable |
+| Raw only (WiFi) | 70-130ms | 27 MB/s | ⚠️ Unstable, causes congestion |
+| Switch compressed→raw→compressed | 130ms+ | 3 MB/s | ❌ Permanently throttled |
+| After camera disable/enable | ~30ms | 3 MB/s | ✅ Recovered |
+
+**Documentation References**:
+- Cyclone DDS Writer History Cache: https://cyclonedds.io/docs/cyclonedds/latest/config/config_file_reference.html
+- DDS Flow Control: Search "Cyclone DDS participant flow control Writer History Cache watermarks"
+- GitHub issues: eclipse-cyclonedds/cyclonedds (flow control, WHC, throttling)
 
 ## Technical Notes
 
