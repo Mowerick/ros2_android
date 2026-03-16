@@ -1,5 +1,6 @@
 #include "camera/controllers/camera_controller.h"
 
+#include <libyuv.h>
 #include <sstream>
 
 #include "core/camera_frame_callback_queue.h"
@@ -100,29 +101,37 @@ bool CameraController::GetLastMeasurement(jni::SensorReadingData &out_data)
 void CameraController::OnImage(
     const std::pair<CameraInfo::UniquePtr, Image::UniquePtr> &info_image)
 {
-  // Always publish when camera is enabled (allows rqt_image_view to discover topic)
+  // Only publish if camera is enabled AND there are subscribers
+  // This prevents unnecessary YUV->RGB conversion and publishing overhead
   if (info_pub_.Enabled() && image_pub_.Enabled())
   {
-    info_pub_.Publish(*info_image.first.get());
-    image_pub_.Publish(*info_image.second.get());
+    // Check if anyone is subscribed (includes tools like rqt_image_view)
+    size_t info_subscribers = info_pub_.GetSubscriberCount();
+    size_t image_subscribers = image_pub_.GetSubscriberCount();
+
+    if (info_subscribers > 0 || image_subscribers > 0)
+    {
+      // At least one subscriber exists - publish both topics
+      info_pub_.Publish(*info_image.first.get());
+      image_pub_.Publish(*info_image.second.get());
+    }
+    // else: No subscribers, skip publishing to save CPU/bandwidth
   }
 
-  // Convert BGR8 to RGBA for UI preview (libyuv outputs BGR, Android needs RGBA)
+  // Convert BGR8 to ARGB for UI preview (image data is BGR, Android needs ARGB)
   {
     std::lock_guard<std::mutex> lock(frame_mutex_);
     const auto &bgr_data = info_image.second->data;
-    int num_pixels = info_image.second->width * info_image.second->height;
-    last_frame_.resize(num_pixels * 4);
+    int width = info_image.second->width;
+    int height = info_image.second->height;
+    last_frame_.resize(width * height * 4);
 
-    // Convert BGR -> RGBA (swap B and R, add alpha)
-    // TODO: Implement efficient BGR -> RGBA conversion
-    for (int i = 0; i < num_pixels; ++i)
-    {
-      last_frame_[i * 4 + 0] = bgr_data[i * 3 + 2]; // R (from B position)
-      last_frame_[i * 4 + 1] = bgr_data[i * 3 + 1]; // G
-      last_frame_[i * 4 + 2] = bgr_data[i * 3 + 0]; // B (from R position)
-      last_frame_[i * 4 + 3] = 255;                 // A
-    }
+    // Use libyuv NEON-optimized RAWToARGB (RAW = BGR24 in libyuv terminology)
+    // Input: BGR24 (from camera_device.cc), Output: ARGB (0xAARRGGBB, BGRA in memory on little-endian)
+    libyuv::RAWToARGB(
+        bgr_data.data(), width * 3,     // BGR24 input
+        last_frame_.data(), width * 4,  // ARGB output (BGRA byte order in memory)
+        width, height);
   }
 
   // Trigger callback to notify UI of new camera frame (throttled to 10 Hz)

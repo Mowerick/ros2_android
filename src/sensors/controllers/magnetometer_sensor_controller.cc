@@ -14,7 +14,7 @@ MagnetometerSensorController::MagnetometerSensorController(
                          sensor->Descriptor().vendor) {
   sensor->SetListener(std::bind(&MagnetometerSensorController::OnSensorReading,
                                 this, std::placeholders::_1));
-  publisher_.SetTopic("magnetometer");
+  publisher_.SetTopic("/sensors/magnetometer");
 }
 
 void MagnetometerSensorController::OnSensorReading(

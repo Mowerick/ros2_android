@@ -38,7 +38,7 @@ fun TopicInfoCard(
             AnimatedVisibility(visible = expanded) {
                 Column {
                     Text(
-                        text = "Name: $topicName",
+                        text = "Name: ${if (topicName.startsWith("/")) topicName else "/$topicName"}",
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(top = 8.dp)
                     )

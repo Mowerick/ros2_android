@@ -14,7 +14,7 @@ GyroscopeSensorController::GyroscopeSensorController(GyroscopeSensor* sensor,
                          sensor->Descriptor().vendor) {
   sensor->SetListener(std::bind(&GyroscopeSensorController::OnGyroReading, this,
                                 std::placeholders::_1));
-  publisher_.SetTopic("gyroscope");
+  publisher_.SetTopic("/sensors/gyroscope");
 }
 
 void GyroscopeSensorController::OnGyroReading(

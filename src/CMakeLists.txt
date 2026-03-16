@@ -51,11 +51,9 @@ add_library(android-ros SHARED
   # Camera controller
   camera/controllers/camera_controller.cc
 
-  # GPS location provider
-  gps/base/gps_location_provider.cc
-
-  # GPS controller
-  gps/controllers/gps_controller.cc
+  # GPS sensor (impl + controller)
+  sensors/impl/gps_location_sensor.cc
+  sensors/controllers/gps_location_sensor_controller.cc
 )
 target_link_libraries(android-ros PRIVATE
     android

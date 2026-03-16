@@ -4,9 +4,9 @@
 #include <sensor_msgs/msg/nav_sat_fix.hpp>
 
 #include "core/log.h"
-#include "gps/base/gps_location_provider.h"
 #include "ros/ros_interface.h"
 #include "sensors/base/sensor_data_provider.h"
+#include "sensors/impl/gps_location_sensor.h"
 
 namespace ros2_android {
 

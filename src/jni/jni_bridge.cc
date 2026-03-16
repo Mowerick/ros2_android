@@ -14,8 +14,6 @@
 #include "core/notification_queue.h"
 #include "core/sensor_data_callback_queue.h"
 #include "core/camera_frame_callback_queue.h"
-#include "gps/base/gps_location_provider.h"
-#include "gps/controllers/gps_controller.h"
 #include "jni/bitmap_utils.h"
 #include "jni/jni_object_utils.h"
 #include "jni/jvm.h"
@@ -23,9 +21,11 @@
 #include "sensors/base/sensor_data_provider.h"
 #include "sensors/controllers/accelerometer_sensor_controller.h"
 #include "sensors/controllers/barometer_sensor_controller.h"
+#include "sensors/controllers/gps_location_sensor_controller.h"
 #include "sensors/controllers/gyroscope_sensor_controller.h"
 #include "sensors/controllers/illuminance_sensor_controller.h"
 #include "sensors/controllers/magnetometer_sensor_controller.h"
+#include "sensors/impl/gps_location_sensor.h"
 #include "sensors/sensors.h"
 
 static JavaVM *g_jvm = nullptr;

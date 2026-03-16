@@ -15,7 +15,7 @@ IlluminanceSensorController::IlluminanceSensorController(
   sensor->SetListener(
       std::bind(&IlluminanceSensorController::OnIlluminanceChanged, this,
                 std::placeholders::_1));
-  publisher_.SetTopic("illuminance");
+  publisher_.SetTopic("/sensors/illuminance");
 }
 
 void IlluminanceSensorController::OnIlluminanceChanged(

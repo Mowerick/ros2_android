@@ -134,6 +134,14 @@ class Publisher {
     publisher_->publish(msg);
   }
 
+  // Check if there are any subscribers
+  size_t GetSubscriberCount() const {
+    if (!publisher_) {
+      return 0;
+    }
+    return publisher_->get_subscription_count();
+  }
+
  private:
   bool enable_ = false;
   RosInterface& ros_;

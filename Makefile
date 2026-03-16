@@ -53,9 +53,7 @@ $(DEPS_STAMP): ros.repos
 ## Build native ROS 2 dependencies (CMake cross-compilation)
 native: $(NATIVE_STAMP)
 
-NATIVE_SOURCES := $(wildcard src/*.cc src/*.h src/*.cpp \
-	src/**/*.cc src/**/*.h src/**/*.cpp \
-	src/CMakeLists.txt)
+NATIVE_SOURCES := $(shell find src -type f \( -name '*.cc' -o -name '*.h' -o -name '*.cpp' -o -name 'CMakeLists.txt' \) 2>/dev/null)
 
 $(NATIVE_STAMP): $(DEPS_STAMP) CMakeLists.txt dependencies.cmake dep_build.cmake $(NATIVE_SOURCES)
 	@echo "==> Building native ROS 2 dependencies..."

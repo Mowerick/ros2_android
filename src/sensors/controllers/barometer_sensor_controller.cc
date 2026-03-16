@@ -14,7 +14,7 @@ BarometerSensorController::BarometerSensorController(BarometerSensor* sensor,
                          sensor->Descriptor().vendor) {
   sensor->SetListener(std::bind(&BarometerSensorController::OnSensorReading,
                                 this, std::placeholders::_1));
-  publisher_.SetTopic("barometer");
+  publisher_.SetTopic("/sensors/barometer");
 }
 
 void BarometerSensorController::OnSensorReading(
