@@ -64,6 +64,8 @@ void CameraController::DisableCamera()
   {
     std::lock_guard<std::mutex> lock(frame_mutex_);
     last_frame_.clear();
+    last_frame_width_ = 0;
+    last_frame_height_ = 0;
   }
 }
 
@@ -118,20 +120,58 @@ void CameraController::OnImage(
     // else: No subscribers, skip publishing to save CPU/bandwidth
   }
 
-  // Convert BGR8 to ARGB for UI preview (image data is BGR, Android needs ARGB)
+  // Convert BGR8 to ARGB for UI preview
+  // The BGR image from camera_device is already rotated for ROS2/rqt_image_view
+  // For Android UI, we need to rotate it back to match device portrait orientation
   {
     std::lock_guard<std::mutex> lock(frame_mutex_);
     const auto &bgr_data = info_image.second->data;
     int width = info_image.second->width;
     int height = info_image.second->height;
-    last_frame_.resize(width * height * 4);
 
-    // Use libyuv NEON-optimized RAWToARGB (RAW = BGR24 in libyuv terminology)
-    // Input: BGR24 (from camera_device.cc), Output: ARGB (0xAARRGGBB, BGRA in memory on little-endian)
+    // Convert BGR24 to ARGB first
+    std::vector<uint8_t> argb_buffer(width * height * 4);
     libyuv::RAWToARGB(
-        bgr_data.data(), width * 3,     // BGR24 input
-        last_frame_.data(), width * 4,  // ARGB output (BGRA byte order in memory)
+        bgr_data.data(), width * 3,
+        argb_buffer.data(), width * 4,
         width, height);
+
+    // Determine inverse rotation to undo sensor_orientation rotation
+    // This converts from ROS2-oriented image back to device portrait orientation
+    libyuv::RotationMode inverse_rotation;
+    switch (camera_descriptor_.sensor_orientation)
+    {
+    case 0:
+      inverse_rotation = libyuv::kRotate0;
+      break;
+    case 90:
+      inverse_rotation = libyuv::kRotate270;  // undo 90° CW with 270° CW (= 90° CCW)
+      break;
+    case 180:
+      inverse_rotation = libyuv::kRotate180;  // undo 180° with 180°
+      break;
+    case 270:
+      inverse_rotation = libyuv::kRotate90;   // undo 270° CW with 90° CW (= 270° CCW)
+      break;
+    default:
+      inverse_rotation = libyuv::kRotate0;
+      break;
+    }
+
+    // Calculate dimensions after inverse rotation
+    bool swaps_dimensions = (inverse_rotation == libyuv::kRotate90 || inverse_rotation == libyuv::kRotate270);
+    int rotated_width = swaps_dimensions ? height : width;
+    int rotated_height = swaps_dimensions ? width : height;
+
+    last_frame_.resize(rotated_width * rotated_height * 4);
+    last_frame_width_ = rotated_width;
+    last_frame_height_ = rotated_height;
+
+    libyuv::ARGBRotate(
+        argb_buffer.data(), width * 4,
+        last_frame_.data(), rotated_width * 4,
+        width, height,
+        inverse_rotation);
   }
 
   // Trigger callback to notify UI of new camera frame (throttled to 10 Hz)
@@ -145,7 +185,7 @@ bool CameraController::GetLastFrame(std::vector<uint8_t> &out_data,
   if (last_frame_.empty())
     return false;
   out_data = last_frame_; // RGBA data
-  out_width = 640;
-  out_height = 480;
+  out_width = last_frame_width_;
+  out_height = last_frame_height_;
   return true;
 }

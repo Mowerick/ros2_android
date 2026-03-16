@@ -240,57 +240,79 @@ void CameraDevice::ProcessImages()
         continue;
       }
 
-      // Convert YUV420 to RGB24 using libyuv (SIMD-optimized)
-      std::vector<uint8_t> rgb_buffer(width_ * height_ * 3);
-
-      // Detect YUV format and convert to RGB24
-      int result;
-      if (uv_pixel_stride == 2)
+      // Convert YUV420 to I420 and rotate in one step
+      // sensor_orientation is the clockwise angle to rotate for correct display orientation
+      libyuv::RotationMode rotation;
+      switch (desc_.sensor_orientation)
       {
-        // NV12 or NV21 (semi-planar with interleaved UV)
-        uint8_t *uv_data = (u_data < v_data) ? u_data : v_data;
-        bool is_nv12 = (u_data < v_data);
+      case 0:
+        rotation = libyuv::kRotate0;
+        break;
+      case 90:
+        rotation = libyuv::kRotate90;
+        break;
+      case 180:
+        rotation = libyuv::kRotate180;
+        break;
+      case 270:
+        rotation = libyuv::kRotate270;
+        break;
+      default:
+        LOGW("Unexpected sensor_orientation %d, defaulting to 0°", desc_.sensor_orientation);
+        rotation = libyuv::kRotate0;
+        break;
+      }
 
-        if (is_nv12)
-        {
-          result = libyuv::NV12ToRGB24(
-              y_data, y_row_stride,
-              uv_data, uv_row_stride,
-              rgb_buffer.data(), width_ * 3,
-              width_, height_);
-        }
-        else
-        {
-          result = libyuv::NV21ToRGB24(
-              y_data, y_row_stride,
-              uv_data, uv_row_stride,
-              rgb_buffer.data(), width_ * 3,
-              width_, height_);
-        }
-      }
-      else
-      {
-        // I420/YV12 (planar with separate U and V planes)
-        result = libyuv::I420ToRGB24(
-            y_data, y_row_stride,
-            u_data, uv_row_stride,
-            v_data, uv_row_stride,
-            rgb_buffer.data(), width_ * 3,
-            width_, height_);
-      }
+      // Calculate output dimensions after rotation
+      int output_width = (rotation == libyuv::kRotate90 || rotation == libyuv::kRotate270) ? height_ : width_;
+      int output_height = (rotation == libyuv::kRotate90 || rotation == libyuv::kRotate270) ? width_ : height_;
+
+      // Allocate I420 buffers for rotated YUV image
+      int i420_y_size = output_width * output_height;
+      int i420_uv_size = ((output_width + 1) / 2) * ((output_height + 1) / 2);
+      std::vector<uint8_t> rotated_y(i420_y_size);
+      std::vector<uint8_t> rotated_u(i420_uv_size);
+      std::vector<uint8_t> rotated_v(i420_uv_size);
+
+      // Convert and rotate YUV420 to I420 in one step using libyuv
+      int result = libyuv::Android420ToI420Rotate(
+          y_data, y_row_stride,
+          u_data, uv_row_stride,
+          v_data, uv_row_stride,
+          uv_pixel_stride,
+          rotated_y.data(), output_width,
+          rotated_u.data(), (output_width + 1) / 2,
+          rotated_v.data(), (output_width + 1) / 2,
+          width_, height_,
+          rotation);
 
       if (result != 0)
       {
-        LOGW("libyuv YUV->RGB24 conversion failed with code %d", result);
+        LOGW("libyuv Android420ToI420Rotate failed with code %d", result);
+        continue;
+      }
+
+      // Convert rotated I420 to RGB24
+      std::vector<uint8_t> rgb_buffer(output_width * output_height * 3);
+      result = libyuv::I420ToRGB24(
+          rotated_y.data(), output_width,
+          rotated_u.data(), (output_width + 1) / 2,
+          rotated_v.data(), (output_width + 1) / 2,
+          rgb_buffer.data(), output_width * 3,
+          output_width, output_height);
+
+      if (result != 0)
+      {
+        LOGW("libyuv I420->RGB24 conversion failed with code %d", result);
         continue;
       }
 
       // Create ROS2 Image message with BGR8 encoding (libyuv RGB24 outputs BGR)
       auto image_msg = std::make_unique<sensor_msgs::msg::Image>();
-      image_msg->width = width_;
-      image_msg->height = height_;
+      image_msg->width = output_width;
+      image_msg->height = output_height;
       image_msg->encoding = "bgr8";
-      image_msg->step = width_ * 3;
+      image_msg->step = output_width * 3;
       image_msg->data = std::move(rgb_buffer);
 
       auto camera_info = std::make_unique<CameraInfo>();
