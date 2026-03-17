@@ -2,11 +2,15 @@ package com.github.mowerick.ros2.android
 
 import android.Manifest
 import android.app.Activity
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.IntentSender
 import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationManager
+import android.os.Build
 import android.os.Looper
 import android.util.Log
 import androidx.activity.result.ActivityResultLauncher
@@ -39,11 +43,14 @@ class GpsManager(private val context: Context) {
     private var locationCallback: LocationCallback? = null
     private var isStarted = false
     private var locationRequest: LocationRequest? = null
+    private var locationServiceReceiver: BroadcastReceiver? = null
 
     // Callbacks for external coordination
     private var onError: ((String) -> Unit)? = null
     private var onPermissionNeeded: (() -> Unit)? = null
     private var onSettingsNeeded: ((ActivityResultLauncher<IntentSenderRequest>) -> Unit)? = null
+    private var onLocationServiceDisabled: (() -> Unit)? = null
+    private var onLocationServiceEnabled: (() -> Unit)? = null
 
     companion object {
         const val REQUEST_CHECK_SETTINGS = 1001
@@ -55,11 +62,15 @@ class GpsManager(private val context: Context) {
     fun setCallbacks(
         onError: (String) -> Unit,
         onPermissionNeeded: () -> Unit,
-        onSettingsNeeded: (ActivityResultLauncher<IntentSenderRequest>) -> Unit
+        onSettingsNeeded: (ActivityResultLauncher<IntentSenderRequest>) -> Unit,
+        onLocationServiceDisabled: (() -> Unit)? = null,
+        onLocationServiceEnabled: (() -> Unit)? = null
     ) {
         this.onError = onError
         this.onPermissionNeeded = onPermissionNeeded
         this.onSettingsNeeded = onSettingsNeeded
+        this.onLocationServiceDisabled = onLocationServiceDisabled
+        this.onLocationServiceEnabled = onLocationServiceEnabled
     }
 
     /**
@@ -187,6 +198,10 @@ class GpsManager(private val context: Context) {
                 locationCallback!!,
                 Looper.getMainLooper()
             )
+
+            // Register broadcast receiver to monitor location service state changes
+            registerLocationServiceReceiver()
+
             isStarted = true
             Log.i(tag, "GPS location updates started - FusedLocationProviderClient is now active")
             Log.i(tag, "Waiting for GPS fix... (may take 10-30 seconds outdoors)")
@@ -194,6 +209,75 @@ class GpsManager(private val context: Context) {
         } catch (e: SecurityException) {
             Log.e(tag, "Failed to start GPS: ${e.message}")
             return false
+        }
+    }
+
+    /**
+     * Register broadcast receiver to monitor location service state changes
+     */
+    private fun registerLocationServiceReceiver() {
+        if (locationServiceReceiver != null) {
+            Log.d(tag, "Location service receiver already registered")
+            return // Already registered
+        }
+
+        locationServiceReceiver = object : BroadcastReceiver() {
+            override fun onReceive(receiverContext: Context?, intent: Intent?) {
+                Log.d(tag, "BroadcastReceiver.onReceive() called - action: ${intent?.action}")
+
+                when (intent?.action) {
+                    LocationManager.MODE_CHANGED_ACTION,
+                    LocationManager.PROVIDERS_CHANGED_ACTION -> {
+                        Log.i(tag, "Location provider state changed - checking if enabled")
+                        val isEnabled = isLocationEnabled()
+                        Log.i(tag, "Location enabled: $isEnabled")
+
+                        if (!isEnabled) {
+                            Log.w(tag, "Location services disabled externally")
+                            onLocationServiceDisabled?.invoke()
+                        } else {
+                            Log.i(tag, "Location services re-enabled externally")
+                            onLocationServiceEnabled?.invoke()
+                        }
+                    }
+                    else -> {
+                        Log.d(tag, "Received broadcast with action: ${intent?.action}")
+                    }
+                }
+            }
+        }
+
+        val filter = IntentFilter().apply {
+            addAction(LocationManager.MODE_CHANGED_ACTION)
+            addAction(LocationManager.PROVIDERS_CHANGED_ACTION)
+        }
+
+        // Register receiver with appropriate flags for Android 13+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.registerReceiver(
+                locationServiceReceiver,
+                filter,
+                Context.RECEIVER_NOT_EXPORTED
+            )
+        } else {
+            context.registerReceiver(locationServiceReceiver, filter)
+        }
+
+        Log.i(tag, "Registered location service state monitor (MODE_CHANGED + PROVIDERS_CHANGED)")
+    }
+
+    /**
+     * Unregister broadcast receiver
+     */
+    private fun unregisterLocationServiceReceiver() {
+        locationServiceReceiver?.let {
+            try {
+                context.unregisterReceiver(it)
+                locationServiceReceiver = null
+                Log.i(tag, "Unregistered location service state monitor")
+            } catch (e: IllegalArgumentException) {
+                Log.w(tag, "Receiver was not registered: ${e.message}")
+            }
         }
     }
 
@@ -223,6 +307,10 @@ class GpsManager(private val context: Context) {
             fusedLocationClient.removeLocationUpdates(it)
             locationCallback = null
         }
+
+        // Unregister location service state monitor
+        unregisterLocationServiceReceiver()
+
         isStarted = false
         Log.i(tag, "GPS location updates stopped")
     }
