@@ -145,9 +145,12 @@ Back navigation (`RosViewModel.navigateBack()`):
 - **Solution**: Track pending enable request with `pendingGpsSensorId` and disable sensor in both decline paths (`onLocationPermissionDenied` and `onLocationSettingsCancelled`).
 
 **Files Modified**:
-- `ros2_android/app/src/main/kotlin/com/github/mowerick/ros2/android/viewmodel/RosViewModel.kt` - Added `pendingGpsSensorId` tracking and denial handlers (lines 89, 119, 127, 195, 202-208, 350-361)
-- `ros2_android/app/src/main/kotlin/com/github/mowerick/ros2/android/MainActivity.kt` - Added `onLocationPermissionDenied()` callback (line 51)
-- `ros2_android/app/src/main/kotlin/com/github/mowerick/ros2/android/GpsManager.kt` - Already implements `startWithChecks()` with permission/settings validation
+- `ros2_android/app/src/main/kotlin/com/github/mowerick/ros2/android/viewmodel/RosViewModel.kt` - Added `pendingGpsSensorId` tracking and denial handlers
+- `ros2_android/app/src/main/kotlin/com/github/mowerick/ros2/android/MainActivity.kt` - Added `onLocationPermissionDenied()` callback
+- `ros2_android/app/src/main/kotlin/com/github/mowerick/ros2/android/GpsManager.kt` - Implements `startWithChecks()` with permission/settings validation
+
+> [!NOTE]
+> Line number references have been removed to avoid documentation going stale. Search for `pendingGpsSensorId` in RosViewModel.kt to find the relevant implementation.
 
 **References**:
 - Android location permission flow: https://developer.android.com/training/location/permissions

@@ -100,7 +100,8 @@ AFTER:  Kotlin Compose screens <-> JNI data queries/commands <-> C++ data model
 
 ### Event-Driven Callbacks (Replaced Polling)
 
-**Why**: The initial hybrid architecture used polling - the ViewModel ran `while(polling)` loops calling `nativeGetSensorData()` every 100ms. This wasted CPU cycles even when no new data arrived, drained battery with continuous background coroutines, and added 100ms latency between sensor reading and UI update.
+**Why**: The initial hybrid architecture used polling - the ViewModel ran coroutine loops calling `nativeGetSensorData()` every 100ms. This wasted CPU cycles even when no new data arrived, drained battery with continuous background coroutines, and added 100ms latency between sensor reading and UI update.
+
 **Approach**: Replaced polling with event-driven JNI callbacks that mirror the existing notification callback infrastructure:
 
 **Native Layer:**
@@ -117,8 +118,8 @@ AFTER:  Kotlin Compose screens <-> JNI data queries/commands <-> C++ data model
 - Added `setSensorDataCallback()` and `setCameraFrameCallback()` methods to `NativeBridge`
 - Registered callbacks in `RosViewModel.init{}` block (same pattern as notification callbacks)
 - Callbacks check current screen state and only fetch data if the relevant detail screen is active (screen-aware updates)
-- Removed `polling` and `cameraPreviewPolling` flags
-- Removed `startPolling()`, `stopPolling()`, `startCameraPreview()`, `stopCameraPreview()` functions (~50 lines)
+- Removed polling coroutines and associated state flags
+- Removed polling start/stop functions (~50 lines)
 - Simplified navigation methods - callbacks handle updates automatically
 
 **Data Flow (Before):**
