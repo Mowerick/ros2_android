@@ -8,12 +8,13 @@ Target: Android 13 (API 33), NDK 25.1.
 
 ### Implemented
 
-- **Built-in sensor publishers** - accelerometer, barometer, gyroscope, illuminance, magnetometer, GPS location published as ROS 2 topics
+- **Built-in sensor publishers** - accelerometer, barometer, gyroscope, illuminance, magnetometer, GPS location published as ROS 2 topics with frame IDs and timestamps
 - **Camera publisher** - front and rear device cameras published as `sensor_msgs/Image` (raw BGR8) and `sensor_msgs/CompressedImage` (JPEG)
 - **Wi-Fi multicast / DDS discovery** - `MulticastLock` to enable DDS multicast on Android Wi-Fi
 - **DDS domain selection** - configurable `ROS_DOMAIN_ID` and network interface for DDS discovery
 - **Event-driven architecture** - JNI callbacks for sensor data and camera frames (zero polling overhead)
 - **Jetpack Compose UI** - sensor list, live sensor data view, camera preview, node pipeline management
+- **Testing framework** - Python-based ROS 2 subscriber test suite with matplotlib visualizers for all sensor types (accelerometer, gyroscope, magnetometer, barometer, illuminance, GPS, camera)
 
 ### Planned
 
@@ -257,211 +258,48 @@ Grant a permission without the request dialog (app must be installed but not run
 adb shell pm grant com.github.mowerick.ros2.android android.permission.CAMERA
 ```
 
-### ROS 2 Topic Inspection
+### Quick ROS 2 Network Setup
 
-The app publishes ROS 2 topics that can be discovered and inspected from a companion machine on the same network.
-
-**Required environment setup:**
+Use the provided script to configure your host machine for ROS 2 discovery with the Android device:
 
 ```bash
-export ROS_DOMAIN_ID=1
-```
+# Get Android device IP
+adb shell ip addr show wlan0 | grep "inet "
 
-**Common commands:**
+# Run setup script (configures firewall and ROS 2 daemon)
+./scripts/setup_ros2_network.sh <android_ip> <domain_id>
 
-List all topics:
+# Export domain ID in current terminal
+export ROS_DOMAIN_ID=<domain_id>
 
-```bash
+# Verify topics are visible
 ros2 topic list
 ```
 
-Show topic info (includes QoS settings):
+**Example:**
 
 ```bash
-ros2 topic info /camera/front/image_color -v
+./scripts/setup_ros2_network.sh 192.168.1.42 1
+export ROS_DOMAIN_ID=1
+ros2 topic list
 ```
 
-Echo camera info (lightweight):
+> [!NOTE]
+> The domain ID must match the setting in the Android app (default: 1). For detailed testing instructions and troubleshooting, see the [Testing Guide](scripts/tests/README.md).
 
-```bash
-ros2 topic echo /camera/front/camera_info
-```
-
-Echo camera images (high bandwidth):
-
-```bash
-ros2 topic echo /camera/front/image_color --qos-reliability best_effort
-```
-
-Check message rate:
-
-```bash
-ros2 topic hz /camera/front/image_color
-```
-
-**Network requirements:**
-
-- Android device and companion machine must be on the same network
-- Cyclone DDS uses UDP multicast for discovery (port 7650 for domain 1)
-- Cyclone DDS uses UDP unicast for data (dynamic port range 7410-7900)
-- Firewall must allow incoming UDP traffic on these ports
-- The `cyclonedds.xml` config specifies which network interface to use (default: `enp39s0`)
-
-## Testing with ROS 2 Nodes on Host Machine
+## Testing
 
 The Android app publishes sensor and camera data as ROS 2 topics that can be consumed by nodes running on a host machine (Linux/macOS). This enables visualization, logging, and integration with the full ROS 2 ecosystem.
 
-### Network Prerequisites
+For complete testing instructions, including:
+- Automated network setup script
+- Interactive sensor testing framework with visualizers
+- Manual testing procedures
+- Troubleshooting common issues
 
-> [!IMPORTANT]
-> Multicast must be enabled for DDS discovery to work between the Android device and your laptop/PC.
+See the **[Testing Guide](scripts/tests/README.md)**.
 
-DDS discovery relies on UDP multicast (destination address 239.255.0.1). For nodes on different machines to discover each other, the network must support IGMP (Internet Group Management Protocol), which allows routers to intelligently forward multicast packets only to ports where applications have subscribed to the multicast group.
-
-**Common issues:**
-
-- **IGMP snooping disabled**: Some routers disable IGMP snooping by default, causing multicast packets to either flood all ports (inefficient) or be dropped entirely. This prevents DDS discovery across subnets.
-- **WiFi multicast filtering**: Many consumer and enterprise WiFi access points aggressively filter multicast traffic to reduce airtime usage, blocking DDS discovery packets even when IGMP is enabled.
-- **Firewall blocking multicast**: Host firewalls may drop incoming multicast packets by default.
-
-**Required firewall configuration on host machine:**
-
-Execute the following commands on your testing machine to allow IGMP (multicast group joins) and UDP packets:
-
-```bash
-sudo iptables -I INPUT 1 -p igmp -j ACCEPT
-sudo iptables -I INPUT 1 -p udp -d 224.0.0.0/4 -j ACCEPT
-sudo iptables -I INPUT 1 -p udp -s <source_ip> -j ACCEPT
-sudo iptables -L INPUT -v -n --line-numbers
-```
-
-> [!TIP]
-> Replace `<source_ip>` with your Android device's IP address. Check it with:
->
-> ```bash
-> adb shell ip addr show wlan0 | grep inet
-> ```
-
-**Additional checks:**
-
-1. **Enable IGMP snooping** on your router (check admin interface under "Multicast" or "IGMP" settings).
-2. **Verify both devices are on the same subnet** (e.g., both have 192.168.1.x addresses).
-
-### Environment Setup on Host Machine
-
-Set the DDS configuration and domain ID to match the Android app:
-
-```bash
-export ROS_DOMAIN_ID=1
-```
-
-### Verifying Discovery
-
-List all discovered topics (should include topics from the Android app like `/camera/front/image_color`):
-
-```bash
-ros2 topic list
-```
-
-Check topic details and QoS settings:
-
-```bash
-ros2 topic info /camera/front/image_color -v
-```
-
-Measure message publication rate:
-
-```bash
-ros2 topic hz /camera/front/image_color
-```
-
-### Testing Built-in Sensors
-
-> [!IMPORTANT]
-> Before testing sensors, ensure multicast is enabled on your host machine. See [Network Prerequisites](#network-prerequisites) above for firewall configuration.
-
-An interactive Python testing framework is provided in `scripts/tests/` to automatically discover and visualize sensor data from the Android app.
-
-#### Interactive Sensor Testing Framework
-
-The testing framework provides custom visualizations for each sensor type with built-in validation.
-
-**Installation:**
-
-```bash
-cd scripts/tests
-
-# Install Python dependencies
-pip install -r requirements.txt
-
-# Make executable
-chmod +x sensor_test.py
-```
-
-**Usage:**
-
-```bash
-# Run the interactive menu
-./sensor_test.py
-```
-
-The script will:
-
-1. Auto-discover available sensor topics from the Android app
-2. Display an interactive menu with all detected sensors
-3. Launch the appropriate visualization for your selection
-4. Return to the menu when you close the visualization
-
-**Supported visualizations:**
-
-- **Accelerometer** - Real-time 3D acceleration plot with gravity magnitude validation
-- **Gyroscope** - Angular velocity time series with rotation detection
-- **Magnetometer** - Compass heading with 3D magnetic field components
-- **Barometer** - Pressure and altitude estimation with validation
-- **Illuminance** - Animated brightness circle (logarithmic lux mapping)
-- **GPS** - Interactive Folium map with accuracy circles (opens in browser)
-- **Camera** - Launches rqt_image_view for image topics
-
-For detailed usage instructions, test procedures, and troubleshooting, see [scripts/tests/README.md](scripts/tests/README.md).
-
-#### Manual Testing with ROS 2 CLI
-
-You can also test sensors manually using ROS 2 command-line tools.
-
-**Echo sensor data:**
-
-```bash
-# Accelerometer
-ros2 topic echo /sensors/accelerometer
-
-# GPS location
-ros2 topic echo /sensors/gps
-
-# Light sensor
-ros2 topic echo /sensors/illuminance
-```
-
-**Check message rate:**
-
-```bash
-ros2 topic hz /sensors/accelerometer
-```
-
-> [!WARNING]
-> Switching between compressed and raw `image_color` topics (or vice versa) congests the DDS participant. For a smooth camera feed, **restart the publisher** (toggle the camera off and on in the app) after changing topics in rqt_image_view.
-
-**Troubleshooting:**
-
-- **No topics visible**: Check that `ROS_DOMAIN_ID` matches on both devices (default is 1 in the app).
-- **Topics listed but no data**: Camera may not be active in the app. Start the camera publisher from the UI.
-- **High latency**: Camera images are large (~1-3 MB/frame for raw, 50-100 KB for compressed). Ensure both devices are on 5 GHz WiFi or wired Ethernet.
-- **QoS mismatch**: The camera publisher uses `best_effort` reliability. Subscribers must match:
-
-  ```bash
-  ros2 topic echo /camera/front/image_color --qos-reliability best_effort
-  ```
-
-### Other Available Topics
+### Available Topics
 
 **Sensor data:**
 
