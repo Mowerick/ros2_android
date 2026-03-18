@@ -3,6 +3,7 @@
 #include <libyuv.h>
 
 #include "core/notification_queue.h"
+#include "core/time_utils.h"
 
 using ros2_android::CameraDevice;
 
@@ -191,6 +192,18 @@ void CameraDevice::ProcessImages()
     }
     if (nullptr != image.get())
     {
+      // Get image timestamp (nanoseconds since boot, same timebase as sensors)
+      int64_t image_timestamp_ns = 0;
+      if (AMEDIA_OK != AImage_getTimestamp(image.get(), &image_timestamp_ns))
+      {
+        LOGW("Unable to get image timestamp, using current time");
+        image_timestamp_ns = 0;
+      }
+
+      // Convert from CLOCK_BOOTTIME to ROS epoch time (CLOCK_REALTIME)
+      int64_t offset_ns = ros2_android::time_utils::GetBootTimeOffsetNs();
+      int64_t ros_epoch_timestamp_ns = image_timestamp_ns + offset_ns;
+
       // Get YUV plane metadata
       int32_t y_row_stride;
       int32_t uv_pixel_stride;
@@ -309,13 +322,70 @@ void CameraDevice::ProcessImages()
 
       // Create ROS2 Image message with BGR8 encoding (libyuv RGB24 outputs BGR)
       auto image_msg = std::make_unique<sensor_msgs::msg::Image>();
+
+      // Set timestamp from camera capture time (already converted to ROS epoch time above)
+      image_msg->header.stamp.sec = static_cast<int32_t>(ros_epoch_timestamp_ns / 1000000000LL);
+      image_msg->header.stamp.nanosec = static_cast<uint32_t>(ros_epoch_timestamp_ns % 1000000000LL);
+      image_msg->header.frame_id = desc_.id;
       image_msg->width = output_width;
       image_msg->height = output_height;
       image_msg->encoding = "bgr8";
       image_msg->step = output_width * 3;
       image_msg->data = std::move(rgb_buffer);
 
+      // Populate camera_info with estimated intrinsics
       auto camera_info = std::make_unique<CameraInfo>();
+      camera_info->header = image_msg->header; // Use same timestamp and frame_id
+      camera_info->width = output_width;
+      camera_info->height = output_height;
+      camera_info->distortion_model = "plumb_bob";
+
+      // Distortion coefficients (k1, k2, t1, t2, k3) - zeros for uncalibrated
+      camera_info->d.resize(5, 0.0);
+
+      // Camera intrinsic matrix K [3x3]
+      // Estimate focal length as ~0.8 * image_width (typical for mobile cameras)
+      // This is a reasonable approximation without actual calibration
+      double fx = output_width * 0.8;
+      double fy = output_width * 0.8;
+      double cx = output_width / 2.0;
+      double cy = output_height / 2.0;
+
+      camera_info->k[0] = fx;
+      camera_info->k[1] = 0.0;
+      camera_info->k[2] = cx;
+      camera_info->k[3] = 0.0;
+      camera_info->k[4] = fy;
+      camera_info->k[5] = cy;
+      camera_info->k[6] = 0.0;
+      camera_info->k[7] = 0.0;
+      camera_info->k[8] = 1.0;
+
+      // Rectification matrix R [3x3] - identity for monocular camera
+      camera_info->r[0] = 1.0;
+      camera_info->r[1] = 0.0;
+      camera_info->r[2] = 0.0;
+      camera_info->r[3] = 0.0;
+      camera_info->r[4] = 1.0;
+      camera_info->r[5] = 0.0;
+      camera_info->r[6] = 0.0;
+      camera_info->r[7] = 0.0;
+      camera_info->r[8] = 1.0;
+
+      // Projection matrix P [3x4] - for monocular, derived from K with no translation
+      camera_info->p[0] = fx;
+      camera_info->p[1] = 0.0;
+      camera_info->p[2] = cx;
+      camera_info->p[3] = 0.0;
+      camera_info->p[4] = 0.0;
+      camera_info->p[5] = fy;
+      camera_info->p[6] = cy;
+      camera_info->p[7] = 0.0;
+      camera_info->p[8] = 0.0;
+      camera_info->p[9] = 0.0;
+      camera_info->p[10] = 1.0;
+      camera_info->p[11] = 0.0;
+
       Emit({std::move(camera_info), std::move(image_msg)});
     }
   }

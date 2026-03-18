@@ -380,31 +380,75 @@ ros2 topic hz /camera/front/image_color
 > [!IMPORTANT]
 > Before testing sensors, ensure multicast is enabled on your host machine. See [Network Prerequisites](#network-prerequisites) above for firewall configuration.
 
-#### Quick Start
+An interactive Python testing framework is provided in `scripts/tests/` to automatically discover and visualize sensor data from the Android app.
 
-#### Testing Cameras (Front and Rear)
+#### Interactive Sensor Testing Framework
 
-**Required ROS 2 Humble packages** on your testing machine:
+The testing framework provides custom visualizations for each sensor type with built-in validation.
 
-```bash
-sudo apt install ros-humble-rqt-image-view ros-humble-image-transport ros-humble-compressed-image-transport
-```
-
-**Launch the image viewer:**
+**Installation:**
 
 ```bash
-ros2 run rqt_image_view rqt_image_view
+cd scripts/tests
+
+# Install Python dependencies
+pip install -r requirements.txt
+
+# Make executable
+chmod +x sensor_test.py
 ```
 
-**Available topics:**
+**Usage:**
 
-- `/camera/front/image_color` - Front camera (raw BGR8)
-- `/camera/front/image_color/compressed` - Front camera (JPEG)
-- `/camera/back/image_color` - Rear camera (raw BGR8)
-- `/camera/back/image_color/compressed` - Rear camera (JPEG)
+```bash
+# Run the interactive menu
+./sensor_test.py
+```
+
+The script will:
+
+1. Auto-discover available sensor topics from the Android app
+2. Display an interactive menu with all detected sensors
+3. Launch the appropriate visualization for your selection
+4. Return to the menu when you close the visualization
+
+**Supported visualizations:**
+
+- **Accelerometer** - Real-time 3D acceleration plot with gravity magnitude validation
+- **Gyroscope** - Angular velocity time series with rotation detection
+- **Magnetometer** - Compass heading with 3D magnetic field components
+- **Barometer** - Pressure and altitude estimation with validation
+- **Illuminance** - Animated brightness circle (logarithmic lux mapping)
+- **GPS** - Interactive Folium map with accuracy circles (opens in browser)
+- **Camera** - Launches rqt_image_view for image topics
+
+For detailed usage instructions, test procedures, and troubleshooting, see [scripts/tests/README.md](scripts/tests/README.md).
+
+#### Manual Testing with ROS 2 CLI
+
+You can also test sensors manually using ROS 2 command-line tools.
+
+**Echo sensor data:**
+
+```bash
+# Accelerometer
+ros2 topic echo /sensors/accelerometer
+
+# GPS location
+ros2 topic echo /sensors/gps
+
+# Light sensor
+ros2 topic echo /sensors/illuminance
+```
+
+**Check message rate:**
+
+```bash
+ros2 topic hz /sensors/accelerometer
+```
 
 > [!WARNING]
-> Switching between compressed and raw topics (or vice versa) congests the DDS participant. For a smooth camera feed, **restart the publisher** (toggle the camera off and on in the app) after changing topics in rqt_image_view.
+> Switching between compressed and raw `image_color` topics (or vice versa) congests the DDS participant. For a smooth camera feed, **restart the publisher** (toggle the camera off and on in the app) after changing topics in rqt_image_view.
 
 **Troubleshooting:**
 

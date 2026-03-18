@@ -1,0 +1,16 @@
+# ROS 2 Android Sensor Testing Framework - Python Dependencies
+
+# Interactive CLI
+questionary>=2.0.0
+
+# Data visualization
+matplotlib>=3.5.0       # Plotting library
+numpy>=1.21.0          # Numerical operations
+tornado>=6.0.0         # Required for matplotlib WebAgg backend
+
+# GPS map visualization
+folium>=0.17.0
+
+# ROS 2 Python client library (should be installed via ROS 2)
+# If not available, install ROS 2 Humble desktop first:
+# sudo apt install ros-humble-desktop
