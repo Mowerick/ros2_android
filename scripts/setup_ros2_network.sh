@@ -4,16 +4,8 @@
 #
 # Usage: ./setup_ros2_network.sh <android_ip> <domain_id>
 #
-# This script:
-# 1. Configures iptables firewall rules to allow DDS multicast discovery
-# 2. Sets ROS_DOMAIN_ID environment variable
-# 3. Starts the ROS 2 daemon for topic discovery
-#
-# Example:
-#   ./setup_ros2_network.sh 192.168.1.100 1
-#
 
-set -e  # Exit on error
+set -e # Exit on error
 
 # Color output
 RED='\033[0;31m'
@@ -38,16 +30,6 @@ error() {
 if [ "$#" -ne 2 ]; then
     error "Invalid number of arguments"
     echo "Usage: $0 <android_ip> <domain_id>"
-    echo ""
-    echo "Arguments:"
-    echo "  android_ip  - IP address of Android device (e.g., 192.168.1.100)"
-    echo "  domain_id   - ROS 2 domain ID integer (0-101, typically 1)"
-    echo ""
-    echo "Example:"
-    echo "  $0 192.168.1.100 1"
-    echo ""
-    echo "To find your Android device IP:"
-    echo "  adb shell ip addr show wlan0 | grep inet"
     exit 1
 fi
 
@@ -57,14 +39,12 @@ DOMAIN_ID="$2"
 # Validate IP address format
 if ! [[ "$ANDROID_IP" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
     error "Invalid IP address format: $ANDROID_IP"
-    echo "Expected format: xxx.xxx.xxx.xxx (e.g., 192.168.1.100)"
     exit 1
 fi
 
 # Validate domain ID (must be 0-101)
 if ! [[ "$DOMAIN_ID" =~ ^[0-9]+$ ]] || [ "$DOMAIN_ID" -lt 0 ] || [ "$DOMAIN_ID" -gt 101 ]; then
     error "Invalid domain ID: $DOMAIN_ID"
-    echo "Domain ID must be an integer between 0 and 101"
     exit 1
 fi
 
@@ -80,66 +60,31 @@ fi
 info "Configuring iptables firewall rules..."
 
 # Allow IGMP (multicast group joins)
-sudo iptables -C INPUT -p igmp -j ACCEPT 2>/dev/null || \
+sudo iptables -C INPUT -p igmp -j ACCEPT 2>/dev/null ||
     sudo iptables -I INPUT 1 -p igmp -j ACCEPT
 
-# Allow UDP multicast packets (224.0.0.0/4 is the multicast range)
-sudo iptables -C INPUT -p udp -d 224.0.0.0/4 -j ACCEPT 2>/dev/null || \
+# Allow UDP multicast packets
+sudo iptables -C INPUT -p udp -d 224.0.0.0/4 -j ACCEPT 2>/dev/null ||
     sudo iptables -I INPUT 1 -p udp -d 224.0.0.0/4 -j ACCEPT
 
 # Allow UDP packets from Android device
-sudo iptables -C INPUT -p udp -s "$ANDROID_IP" -j ACCEPT 2>/dev/null || \
+sudo iptables -C INPUT -p udp -s "$ANDROID_IP" -j ACCEPT 2>/dev/null ||
     sudo iptables -I INPUT 1 -p udp -s "$ANDROID_IP" -j ACCEPT
 
 info "iptables rules configured successfully"
 
-# Show current INPUT chain rules
-info "Current iptables INPUT chain (first 10 rules):"
-sudo iptables -L INPUT -v -n --line-numbers | head -n 12
-
-# Export ROS_DOMAIN_ID
-info "Setting ROS_DOMAIN_ID=$DOMAIN_ID"
+# Export locally for the remainder of this script process
 export ROS_DOMAIN_ID="$DOMAIN_ID"
 
-# Add to current shell profile for persistence
-if [ -n "$BASH_VERSION" ]; then
-    SHELL_RC="$HOME/.bashrc"
-elif [ -n "$ZSH_VERSION" ]; then
-    SHELL_RC="$HOME/.zshrc"
-else
-    SHELL_RC="$HOME/.profile"
-fi
-
-# Check if ROS_DOMAIN_ID already set in shell profile
-if grep -q "export ROS_DOMAIN_ID=" "$SHELL_RC" 2>/dev/null; then
-    warn "ROS_DOMAIN_ID already set in $SHELL_RC"
-    info "Current value: $(grep "export ROS_DOMAIN_ID=" "$SHELL_RC")"
-    read -p "Update to ROS_DOMAIN_ID=$DOMAIN_ID? (y/n) " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        sed -i "s/export ROS_DOMAIN_ID=.*/export ROS_DOMAIN_ID=$DOMAIN_ID/" "$SHELL_RC"
-        info "Updated ROS_DOMAIN_ID in $SHELL_RC"
-    fi
-else
-    echo "export ROS_DOMAIN_ID=$DOMAIN_ID" >> "$SHELL_RC"
-    info "Added ROS_DOMAIN_ID to $SHELL_RC for future sessions"
-fi
-
 # Check if ROS 2 is sourced
-if ! command -v ros2 &> /dev/null; then
-    error "ROS 2 not found in PATH"
-    echo ""
-    echo "Please source your ROS 2 installation first:"
-    echo "  source /opt/ros/humble/setup.bash"
-    echo ""
-    echo "Or add it to your shell profile:"
-    echo "  echo 'source /opt/ros/humble/setup.bash' >> $SHELL_RC"
+if ! command -v ros2 &>/dev/null; then
+    error "ROS 2 not found in PATH. Please source your ROS 2 installation first."
     exit 1
 fi
 
 # Start ROS 2 daemon
-info "Starting ROS 2 daemon..."
-ros2 daemon stop 2>/dev/null || true  # Stop existing daemon if running
+info "Starting ROS 2 daemon on Domain $DOMAIN_ID..."
+ros2 daemon stop 2>/dev/null || true 
 sleep 1
 ros2 daemon start
 
@@ -147,7 +92,7 @@ info "Waiting for daemon to initialize..."
 sleep 2
 
 # Verify daemon is running
-if ros2 daemon status &> /dev/null; then
+if ros2 daemon status &>/dev/null; then
     info "ROS 2 daemon is running"
 else
     error "Failed to start ROS 2 daemon"
@@ -158,17 +103,12 @@ fi
 echo ""
 info "Setup complete!"
 echo ""
-echo "Configuration:"
-echo "  Android IP:     $ANDROID_IP"
-echo "  ROS_DOMAIN_ID:  $DOMAIN_ID"
+echo "Note: The network is configured, but this terminal session"
+echo "still needs the domain ID set manually."
 echo ""
-echo "Next steps:"
-echo "  1. Start the ROS 2 app on your Android device"
-echo "  2. Set domain ID to $DOMAIN_ID in the app"
-echo "  3. Verify discovery:"
-echo "       ros2 topic list"
-echo "       ros2 topic echo /sensors/accelerometer"
+echo "Run this command now:"
+echo -e "  ${YELLOW}export ROS_DOMAIN_ID=$DOMAIN_ID${NC}"
 echo ""
-warn "Remember to source ROS 2 in new terminal sessions:"
-echo "  source /opt/ros/humble/setup.bash"
-echo "  export ROS_DOMAIN_ID=$DOMAIN_ID"
+echo "Then verify discovery:"
+echo "  ros2 topic list"
+echo ""
