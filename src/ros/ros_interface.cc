@@ -9,6 +9,26 @@ RosInterface::RosInterface() : device_id_("android") {}
 RosInterface::RosInterface(const std::string& device_id)
     : device_id_(device_id.empty() ? "android" : device_id) {}
 
+RosInterface::~RosInterface() {
+  LOGI("RosInterface destructor called");
+
+  // Shutdown context and wait for executor thread to finish
+  if (context_ && context_->is_valid()) {
+    try {
+      context_->shutdown("RosInterface destructor");
+    } catch (const std::exception& e) {
+      LOGE("Exception during context shutdown: %s", e.what());
+    }
+  }
+
+  if (executor_thread_.joinable()) {
+    LOGI("Joining executor thread");
+    executor_thread_.join();
+  }
+
+  LOGI("RosInterface destructor complete");
+}
+
 void RosInterface::Initialize(size_t ros_domain_id) {
 
   rclcpp::InitOptions init_options;
@@ -45,15 +65,33 @@ rclcpp::Node::SharedPtr RosInterface::get_node() const { return node_; }
 
 const std::string& RosInterface::GetDeviceId() const { return device_id_; }
 
-void RosInterface::AddObserver(std::function<void(void)> init_or_shutdown) {
-  observers_.push_back(init_or_shutdown);
+ros2_android::ObserverId RosInterface::AddObserver(std::function<void(void)> init_or_shutdown) {
+  std::lock_guard<std::mutex> lock(observers_mutex_);
+  ros2_android::ObserverId id = next_observer_id_++;
+  observers_[id] = init_or_shutdown;
+  return id;
+}
+
+void RosInterface::RemoveObserver(ros2_android::ObserverId id) {
+  std::lock_guard<std::mutex> lock(observers_mutex_);
+  auto it = observers_.find(id);
+  if (it != observers_.end()) {
+    observers_.erase(it);
+    LOGI("Removed observer with ID %llu", static_cast<unsigned long long>(id));
+  }
 }
 
 void RosInterface::NotifyInitChanged() {
-  for (auto& observer : observers_) {
-    LOGI("Notifying observer %p", &observer);
+  std::map<ros2_android::ObserverId, std::function<void(void)>> observers_copy;
+  {
+    std::lock_guard<std::mutex> lock(observers_mutex_);
+    observers_copy = observers_;
+    observers_.clear();
+  }
+
+  // Invoke observers outside the lock to avoid deadlock
+  for (const auto& [id, observer] : observers_copy) {
+    LOGI("Notifying observer ID %llu", static_cast<unsigned long long>(id));
     observer();
   }
-  // Still want observations? ask for them again
-  observers_.clear();
 }

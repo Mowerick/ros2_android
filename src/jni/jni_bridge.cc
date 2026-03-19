@@ -12,6 +12,7 @@
 #include "camera/camera_manager.h"
 #include "camera/controllers/camera_controller.h"
 #include "core/log.h"
+#include "core/network_manager.h"
 #include "core/notification_queue.h"
 #include "core/sensor_data_callback_queue.h"
 #include "core/camera_frame_callback_queue.h"
@@ -20,24 +21,24 @@
 #include "jni/jvm.h"
 #include "ros/ros_interface.h"
 #include "sensors/base/sensor_data_provider.h"
-#include "sensors/controllers/accelerometer_sensor_controller.h"
-#include "sensors/controllers/barometer_sensor_controller.h"
 #include "sensors/controllers/gps_location_sensor_controller.h"
-#include "sensors/controllers/gyroscope_sensor_controller.h"
-#include "sensors/controllers/illuminance_sensor_controller.h"
-#include "sensors/controllers/magnetometer_sensor_controller.h"
 #include "sensors/impl/gps_location_sensor.h"
-#include "sensors/sensors.h"
+#include "sensors/sensor_manager.h"
 
 static JavaVM *g_jvm = nullptr;
+
+// Notification callback state
+static std::mutex g_notification_callback_mutex;
 static jobject g_notification_callback_object = nullptr;
 static jmethodID g_notification_callback_method = nullptr;
 
-// Global references for sensor data callback
+// Sensor data callback state
+static std::mutex g_sensor_data_callback_mutex;
 static jobject g_sensor_data_callback_object = nullptr;
 static jmethodID g_sensor_data_callback_method = nullptr;
 
-// Global references for camera frame callback
+// Camera frame callback state
+static std::mutex g_camera_frame_callback_mutex;
 static jobject g_camera_frame_callback_object = nullptr;
 static jmethodID g_camera_frame_callback_method = nullptr;
 
@@ -47,16 +48,21 @@ public:
   AndroidApp(const std::string &cache_dir, const std::string &package_name)
       : cache_dir_(cache_dir),
         package_name_(package_name),
-        sensors_(package_name)
+        sensor_manager_(package_name),
+        network_manager_()
   {
-    LOGI("Initializing Sensors");
-    sensors_.Initialize();
+    LOGI("Initializing SensorManager");
+    sensor_manager_.Initialize();
 
     LOGI("Initializing GPS");
     gps_provider_ = std::make_unique<ros2_android::GpsLocationProvider>();
   }
 
-  ~AndroidApp() = default;
+  ~AndroidApp()
+  {
+    LOGI("AndroidApp destructor called");
+    Cleanup();
+  }
 
   void StartCameras()
   {
@@ -87,41 +93,8 @@ public:
 
   void StartRos(int32_t ros_domain_id, const std::string &network_interface, const std::string &device_id)
   {
-    std::string cyclone_uri = cache_dir_;
-    if (cyclone_uri.back() != '/')
-    {
-      cyclone_uri += '/';
-    }
-    cyclone_uri += "cyclonedds.xml";
-    LOGI("Setting CYCLONEDDS_URI: %s", cyclone_uri.c_str());
-    LOGI("Setting ROS_DOMAIN_ID: %d", ros_domain_id);
-    LOGI("Device ID: %s", device_id.c_str());
-
-    setenv("CYCLONEDDS_URI", cyclone_uri.c_str(), 1);
-    setenv("ROS_DOMAIN_ID", std::to_string(ros_domain_id).c_str(), 1);
-
-    std::ofstream config_file(cyclone_uri.c_str(), std::ofstream::trunc);
-    if (!config_file.is_open())
-    {
-      LOGE("Failed to create cyclonedds.xml at %s", cyclone_uri.c_str());
-      return;
-    }
-
-    config_file << "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n";
-    config_file << "<CycloneDDS xmlns=\"https://cdds.io/config\">\n";
-    config_file << "  <Domain id=\"any\">\n";
-    config_file << "    <General>\n";
-    config_file << "      <AllowMulticast>true</AllowMulticast>\n";
-    config_file << "      <Interfaces>\n";
-    config_file << "        <NetworkInterface name=\"" << network_interface << "\"/>\n";
-    config_file << "      </Interfaces>\n";
-    config_file << "    </General>\n";
-    config_file << "  </Domain>\n";
-    config_file << "</CycloneDDS>\n";
-    config_file.close();
-
-    LOGI("Generated CycloneDDS config for interface: %s, domain: %d, device: %s",
-         network_interface.c_str(), ros_domain_id, device_id.c_str());
+    LOGI("Starting ROS with domain: %d, interface: %s, device: %s",
+         ros_domain_id, network_interface.c_str(), device_id.c_str());
 
     // Check if already initialized - ignore if already running
     if (ros_ && ros_->Initialized())
@@ -130,63 +103,27 @@ public:
       return;
     }
 
+    // Generate Cyclone DDS config using NetworkManager (with caching)
+    if (!network_manager_.GenerateCycloneDdsConfig(cache_dir_, ros_domain_id, network_interface))
+    {
+      LOGE("Failed to generate Cyclone DDS config");
+      return;
+    }
+
     // Create ROS interface with device_id
     ros_.emplace(device_id);
     LOGI("Initializing ROS with device_id: %s", device_id.c_str());
     ros_->Initialize(ros_domain_id);
 
-    // Create sensor controllers now that we have device_id
-    LOGI("Creating sensor controllers");
-    for (auto &sensor : sensors_.GetSensors())
-    {
-      if (ASENSOR_TYPE_LIGHT == sensor->Descriptor().type)
-      {
-        auto controller =
-            std::make_unique<ros2_android::IlluminanceSensorController>(
-                static_cast<ros2_android::IlluminanceSensor *>(sensor.get()),
-                *ros_);
-        controllers_.emplace_back(std::move(controller));
-      }
-      else if (ASENSOR_TYPE_GYROSCOPE == sensor->Descriptor().type)
-      {
-        auto controller =
-            std::make_unique<ros2_android::GyroscopeSensorController>(
-                static_cast<ros2_android::GyroscopeSensor *>(sensor.get()),
-                *ros_);
-        controllers_.emplace_back(std::move(controller));
-      }
-      else if (ASENSOR_TYPE_ACCELEROMETER == sensor->Descriptor().type)
-      {
-        auto controller =
-            std::make_unique<ros2_android::AccelerometerSensorController>(
-                static_cast<ros2_android::AccelerometerSensor *>(
-                    sensor.get()),
-                *ros_);
-        controllers_.emplace_back(std::move(controller));
-      }
-      else if (ASENSOR_TYPE_PRESSURE == sensor->Descriptor().type)
-      {
-        auto controller =
-            std::make_unique<ros2_android::BarometerSensorController>(
-                static_cast<ros2_android::BarometerSensor *>(sensor.get()),
-                *ros_);
-        controllers_.emplace_back(std::move(controller));
-      }
-      else if (ASENSOR_TYPE_MAGNETIC_FIELD == sensor->Descriptor().type)
-      {
-        auto controller =
-            std::make_unique<ros2_android::MagnetometerSensorController>(
-                static_cast<ros2_android::MagnetometerSensor *>(sensor.get()),
-                *ros_);
-        controllers_.emplace_back(std::move(controller));
-      }
-    }
+    // Create sensor controllers using SensorManager
+    size_t sensor_count = sensor_manager_.CreateControllers(*ros_);
+    LOGI("SensorManager created %zu sensor controllers", sensor_count);
 
     // Create GPS controller
     auto gps_controller = std::make_unique<ros2_android::GpsController>(
         gps_provider_.get(), *ros_);
-    controllers_.emplace_back(std::move(gps_controller));
-    LOGI("Created %zu sensor controllers", controllers_.size());
+    gps_controllers_.emplace_back(std::move(gps_controller));
+    LOGI("Created GPS controller");
 
     // Create camera controllers if cameras are available
     if (camera_manager_.HasCameras() && camera_controllers_.empty())
@@ -211,97 +148,57 @@ public:
   {
     LOGI("Cleaning up AndroidApp");
 
-    // Disable controllers (destroy publishers)
-    for (auto &controller : controllers_)
-    {
-      if (controller->IsEnabled())
-        controller->Disable();
-    }
+    // Disable and clear camera controllers first (they have threads)
     for (auto &camera : camera_controllers_)
     {
       if (camera->IsEnabled())
         camera->Disable();
     }
-
-    // Clear controllers and shutdown sensors
-    controllers_.clear();
     camera_controllers_.clear();
-    sensors_.Shutdown();
-  }
 
-  std::string GetSensorListJson()
-  {
-    std::ostringstream ss;
-    ss << "[";
-    for (size_t i = 0; i < controllers_.size(); ++i)
+    // Clear GPS controllers
+    for (auto &gps : gps_controllers_)
     {
-      auto *c = controllers_[i].get();
-      if (i > 0)
-        ss << ",";
-      ss << "{\"uniqueId\":\"" << c->UniqueId() << "\""
-         << ",\"prettyName\":\"" << c->PrettyName() << "\""
-         << ",\"sensorName\":\"" << c->SensorName() << "\""
-         << ",\"vendor\":\"" << c->SensorVendor() << "\""
-         << ",\"topicName\":\"" << c->TopicName() << "\""
-         << ",\"topicType\":\"" << c->TopicType() << "\""
-         << ",\"enabled\":" << (c->IsEnabled() ? "true" : "false")
-         << ",\"type\":\"sensor\"}";
+      if (gps->IsEnabled())
+        gps->Disable();
     }
-    ss << "]";
-    return ss.str();
-  }
+    gps_controllers_.clear();
 
-  std::string GetSensorDataJson(const std::string &unique_id)
-  {
-    for (auto &c : controllers_)
+    // SensorManager handles its own cleanup
+    sensor_manager_.ClearControllers();
+
+    // Clear GPS provider
+    gps_provider_.reset();
+
+    // Shutdown ROS executor thread if running
+    if (ros_ && ros_->Initialized())
     {
-      if (unique_id == c->UniqueId())
+      LOGI("Shutting down ROS interface");
+      // Context shutdown will stop the executor thread
+      if (ros_->get_context() && ros_->get_context()->is_valid())
       {
-        return c->GetLastMeasurementJson();
+        try
+        {
+          ros_->get_context()->shutdown("AndroidApp cleanup");
+        }
+        catch (const std::exception &e)
+        {
+          LOGE("Exception during ROS context shutdown: %s", e.what());
+        }
       }
     }
-    for (const auto &c : camera_controllers_)
-    {
-      if (unique_id == c->UniqueId())
-      {
-        return c->GetLastMeasurementJson();
-      }
-    }
-    return "{}";
+    ros_.reset();
   }
 
-  std::string GetCameraListJson()
-  {
-    std::ostringstream ss;
-    ss << "[";
-    for (size_t i = 0; i < camera_controllers_.size(); ++i)
-    {
-      const auto *c = camera_controllers_[i].get();
-      if (i > 0)
-        ss << ",";
-      auto [width, height] = c->GetResolution();
-      ss << "{\"uniqueId\":\"" << c->UniqueId() << "\""
-         << ",\"name\":\"" << c->GetCameraName() << "\""
-         << ",\"enabled\":" << (c->IsEnabled() ? "true" : "false")
-         << ",\"imageTopicName\":\"" << c->ImageTopicName() << "\""
-         << ",\"imageTopicType\":\"" << c->ImageTopicType() << "\""
-         << ",\"infoTopicName\":\"" << c->InfoTopicName() << "\""
-         << ",\"infoTopicType\":\"" << c->InfoTopicType() << "\""
-         << ",\"resolutionWidth\":" << width
-         << ",\"resolutionHeight\":" << height
-         << ",\"isFrontFacing\":" << (c->IsFrontFacing() ? "true" : "false")
-         << ",\"sensorOrientation\":" << c->SensorOrientation()
-         << "}";
-    }
-    ss << "]";
-    return ss.str();
-  }
+  // JSON methods removed - using structured data instead (GetSensorList, GetCameraList, GetSensorData)
 
   // Structured data getters (replacing JSON)
   std::vector<ros2_android::jni::SensorInfoData> GetSensorList()
   {
     std::vector<ros2_android::jni::SensorInfoData> result;
-    for (auto& c : controllers_)
+
+    // Get sensor controllers from SensorManager
+    for (const auto& c : sensor_manager_.GetControllers())
     {
       ros2_android::jni::SensorInfoData data;
       data.uniqueId = c->UniqueId();
@@ -313,6 +210,21 @@ public:
       data.enabled = c->IsEnabled();
       result.push_back(data);
     }
+
+    // Add GPS controller
+    for (const auto& gps : gps_controllers_)
+    {
+      ros2_android::jni::SensorInfoData data;
+      data.uniqueId = gps->UniqueId();
+      data.prettyName = gps->PrettyName();
+      data.sensorName = gps->SensorName();
+      data.vendor = gps->SensorVendor();
+      data.topicName = gps->TopicName();
+      data.topicType = gps->TopicType();
+      data.enabled = gps->IsEnabled();
+      result.push_back(data);
+    }
+
     return result;
   }
 
@@ -343,13 +255,24 @@ public:
 
   bool GetSensorData(const std::string& unique_id, ros2_android::jni::SensorReadingData& out_data)
   {
-    for (auto& c : controllers_)
+    // Check sensor managers controllers
+    for (const auto& c : sensor_manager_.GetControllers())
     {
       if (unique_id == c->UniqueId())
       {
         return c->GetLastMeasurement(out_data);
       }
     }
+
+    // Check GPS controllers
+    for (const auto& gps : gps_controllers_)
+    {
+      if (unique_id == gps->UniqueId())
+      {
+        return gps->GetLastMeasurement(out_data);
+      }
+    }
+
     return false;
   }
 
@@ -413,11 +336,16 @@ public:
 
   void EnableSensor(const std::string &unique_id)
   {
-    for (auto &c : controllers_)
+    // Try sensor manager first
+    if (sensor_manager_.EnableSensor(unique_id))
+      return;
+
+    // Try GPS controllers
+    for (auto &gps : gps_controllers_)
     {
-      if (unique_id == c->UniqueId())
+      if (unique_id == gps->UniqueId())
       {
-        c->Enable();
+        gps->Enable();
         return;
       }
     }
@@ -425,53 +353,41 @@ public:
 
   void DisableSensor(const std::string &unique_id)
   {
-    for (auto &c : controllers_)
+    // Try sensor manager first
+    if (sensor_manager_.DisableSensor(unique_id))
+      return;
+
+    // Try GPS controllers
+    for (auto &gps : gps_controllers_)
     {
-      if (unique_id == c->UniqueId())
+      if (unique_id == gps->UniqueId())
       {
-        c->Disable();
+        gps->Disable();
         return;
       }
     }
   }
 
-  std::string GetDiscoveredTopicsJson()
-  {
-    if (!ros_ || !ros_->Initialized())
-      return "[]";
-    auto node = ros_->get_node();
-    if (!node)
-      return "[]";
-
-    auto topics = node->get_topic_names_and_types();
-    std::ostringstream ss;
-    ss << "[";
-    bool first = true;
-    for (const auto &[name, types] : topics)
-    {
-      if (!first)
-        ss << ",";
-      first = false;
-      ss << "\"" << name << "\"";
-    }
-    ss << "]";
-    return ss.str();
-  }
+  // GetDiscoveredTopicsJson removed - using structured GetDiscoveredTopics() instead
 
   std::string cache_dir_;
   std::string package_name_;
   std::optional<ros2_android::RosInterface> ros_;
-  ros2_android::Sensors sensors_;
 
+  // Managers
+  ros2_android::SensorManager sensor_manager_;
+  ros2_android::NetworkManager network_manager_;
+  ros2_android::CameraManager camera_manager_;
+
+  // GPS
   std::vector<std::unique_ptr<ros2_android::SensorDataProvider>>
-      controllers_;
+      gps_controllers_;
+  std::unique_ptr<ros2_android::GpsLocationProvider> gps_provider_;
+
+  // Cameras
   std::vector<std::unique_ptr<ros2_android::CameraController>>
       camera_controllers_;
-
-  ros2_android::CameraManager camera_manager_;
-  std::unique_ptr<ros2_android::GpsLocationProvider> gps_provider_;
   bool started_cameras_ = false;
-  std::vector<std::string> network_interfaces_;
 };
 
 static std::unique_ptr<AndroidApp> g_app;
@@ -533,7 +449,7 @@ extern "C"
       env->ReleaseStringUTFChars(jstr, str);
     }
 
-    g_app->network_interfaces_ = std::move(ifaces);
+    g_app->network_manager_.SetNetworkInterfaces(std::move(ifaces));
   }
 
   JNIEXPORT void JNICALL
@@ -664,7 +580,7 @@ extern "C"
     if (!g_app) {
       return ros2_android::jni::CreateStringArray(env, {});
     }
-    return ros2_android::jni::CreateStringArray(env, g_app->network_interfaces_);
+    return ros2_android::jni::CreateStringArray(env, g_app->network_manager_.GetNetworkInterfaces());
   }
 
   JNIEXPORT jobjectArray JNICALL
@@ -741,6 +657,8 @@ extern "C"
   Java_com_github_mowerick_ros2_android_NativeBridge_nativeSetNotificationCallback(
       JNIEnv *env, jobject thiz)
   {
+    std::lock_guard<std::mutex> lock(g_notification_callback_mutex);
+
     // Clean up previous callback if it exists
     if (g_notification_callback_object != nullptr)
     {
@@ -771,6 +689,7 @@ extern "C"
     ros2_android::NotificationQueue::Instance().SetCallback(
         [](ros2_android::NotificationSeverity severity, const std::string &message)
         {
+          std::lock_guard<std::mutex> lock(g_notification_callback_mutex);
           if (g_jvm == nullptr || g_notification_callback_object == nullptr ||
               g_notification_callback_method == nullptr)
           {
@@ -831,6 +750,8 @@ extern "C"
   Java_com_github_mowerick_ros2_android_NativeBridge_nativeSetSensorDataCallback(
       JNIEnv *env, jobject thiz)
   {
+    std::lock_guard<std::mutex> lock(g_sensor_data_callback_mutex);
+
     // Clean up previous callback if it exists
     if (g_sensor_data_callback_object != nullptr)
     {
@@ -861,6 +782,7 @@ extern "C"
     ros2_android::SensorDataCallbackQueue::Instance().SetCallback(
         [](const std::string &sensor_id)
         {
+          std::lock_guard<std::mutex> lock(g_sensor_data_callback_mutex);
           if (g_jvm == nullptr || g_sensor_data_callback_object == nullptr ||
               g_sensor_data_callback_method == nullptr)
           {
@@ -901,6 +823,8 @@ extern "C"
   Java_com_github_mowerick_ros2_android_NativeBridge_nativeSetCameraFrameCallback(
       JNIEnv *env, jobject thiz)
   {
+    std::lock_guard<std::mutex> lock(g_camera_frame_callback_mutex);
+
     // Clean up previous callback if it exists
     if (g_camera_frame_callback_object != nullptr)
     {
@@ -931,6 +855,7 @@ extern "C"
     ros2_android::CameraFrameCallbackQueue::Instance().SetCallback(
         [](const std::string &camera_id)
         {
+          std::lock_guard<std::mutex> lock(g_camera_frame_callback_mutex);
           if (g_jvm == nullptr || g_camera_frame_callback_object == nullptr ||
               g_camera_frame_callback_method == nullptr)
           {

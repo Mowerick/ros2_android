@@ -60,12 +60,20 @@ static const AImageReader_ImageListener kImageListenerCallbacks = {
 
 /// ***************** Android capture session state callbacks
 /// ********************
-// TODO implement these -they're still copy/pasted
-static void onSessionActive(void *context, ACameraCaptureSession *session) {}
+static void onSessionActive(void *context, ACameraCaptureSession *session)
+{
+  LOGI("Camera capture session is now active (session pointer %p)", session);
+}
 
-static void onSessionReady(void *context, ACameraCaptureSession *session) {}
+static void onSessionReady(void *context, ACameraCaptureSession *session)
+{
+  LOGI("Camera capture session is ready (session pointer %p)", session);
+}
 
-static void onSessionClosed(void *context, ACameraCaptureSession *session) {}
+static void onSessionClosed(void *context, ACameraCaptureSession *session)
+{
+  LOGI("Camera capture session closed (session pointer %p)", session);
+}
 
 static ACameraCaptureSession_stateCallbacks sessionStateCallbacks{
     .context = nullptr,
@@ -75,21 +83,43 @@ static ACameraCaptureSession_stateCallbacks sessionStateCallbacks{
 };
 
 /// ***************** Android capture callbacks ********************
-// TODO implement these -they're still copy/pasted
 void onCaptureFailed(void *context, ACameraCaptureSession *session,
                      ACaptureRequest *request, ACameraCaptureFailure *failure)
 {
+  LOGW("Camera capture failed (session %p, reason %d, frame %lld)",
+       session, failure->reason, static_cast<long long>(failure->frameNumber));
+
+  // Only notify user for non-transient failures to avoid spam
+  if (failure->reason != CAPTURE_FAILURE_REASON_FLUSHED)
+  {
+    ros2_android::PostNotification(
+        ros2_android::NotificationSeverity::WARNING,
+        "Camera capture failed");
+  }
 }
 
 void onCaptureSequenceCompleted(void *context, ACameraCaptureSession *session,
-                                int sequenceId, int64_t frameNumber) {}
+                                int sequenceId, int64_t frameNumber)
+{
+  LOGI("Camera capture sequence %d completed at frame %lld",
+       sequenceId, static_cast<long long>(frameNumber));
+}
 
 void onCaptureSequenceAborted(void *context, ACameraCaptureSession *session,
-                              int sequenceId) {}
+                              int sequenceId)
+{
+  LOGW("Camera capture sequence %d aborted", sequenceId);
+  ros2_android::PostNotification(
+      ros2_android::NotificationSeverity::WARNING,
+      "Camera capture sequence aborted");
+}
 
 void onCaptureCompleted(void *context, ACameraCaptureSession *session,
                         ACaptureRequest *request,
-                        const ACameraMetadata *result) {}
+                        const ACameraMetadata *result)
+{
+  // Successful capture - no logging needed (would be too verbose)
+}
 
 static ACameraCaptureSession_captureCallbacks captureCallbacks{
     .context = nullptr,
@@ -127,9 +157,16 @@ std::unique_ptr<CameraDevice> CameraDevice::OpenCamera(
       camera_device->width_, camera_device->height_, AIMAGE_FORMAT_YUV_420_888,
       max_simultaneous_images, &(camera_device->reader_));
 
-  // TODO handle errors
-  // if (status != AMEDIA_OK)
-  // Handle errors here
+  if (status != AMEDIA_OK)
+  {
+    LOGE("Failed to create AImageReader for camera %s, status: %d", camera_id, status);
+    ros2_android::PostNotification(
+        ros2_android::NotificationSeverity::ERROR,
+        "Failed to initialize camera image reader");
+    // Clean up the camera device that was already opened
+    ACameraDevice_close(camera_device->native_device_);
+    return nullptr;
+  }
 
   AImageReader_setImageListener(camera_device->reader_,
                                 &(camera_device->reader_callbacks_));
@@ -154,13 +191,13 @@ std::unique_ptr<CameraDevice> CameraDevice::OpenCamera(
 
   ACameraDevice_createCaptureSession(camera_device->native_device_,
                                      camera_device->output_container_,
-                                     &sessionStateCallbacks, // TODO
+                                     &sessionStateCallbacks,
                                      &(camera_device->capture_session_));
 
   // Start Recording
   ACameraCaptureSession_setRepeatingRequest(
       camera_device->capture_session_,
-      &captureCallbacks, // TODO
+      &captureCallbacks,
       1, &(camera_device->capture_request_), nullptr);
 
   return camera_device;

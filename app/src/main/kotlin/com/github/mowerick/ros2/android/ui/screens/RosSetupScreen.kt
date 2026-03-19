@@ -235,15 +235,6 @@ fun RosSetupScreen(
             ) {
                 Text("Reset ROS (Restart App)", style = MaterialTheme.typography.titleMedium)
             }
-
-            if (rosStarted) {
-                Text(
-                    text = "To change ROS settings, use Reset ROS button",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 8.dp)
-                )
-            }
         }
     }
 }

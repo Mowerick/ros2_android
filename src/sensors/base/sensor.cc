@@ -69,8 +69,11 @@ void Sensor::Initialize() {
 void Sensor::Shutdown() {
   shutdown_.store(true);
   if (queue_thread_.joinable()) {
-    // TODO(sloretz) Check looper_ isn't null
-    ALooper_wake(looper_);
+    if (looper_ != nullptr) {
+      ALooper_wake(looper_);
+    } else {
+      LOGW("Looper is null during shutdown, thread may not wake immediately");
+    }
     queue_thread_.join();
   }
 }

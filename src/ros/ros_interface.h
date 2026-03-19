@@ -1,6 +1,7 @@
 #pragma once
 
 #include <rclcpp/rclcpp.hpp>
+#include <map>
 #include <thread>
 #include <variant>
 
@@ -8,11 +9,15 @@
 #include "core/log.h"
 
 namespace ros2_android {
+
+// Observer ID type for tracking registered observers
+using ObserverId = uint64_t;
+
 class RosInterface {
  public:
   RosInterface();
   RosInterface(const std::string& device_id);
-  ~RosInterface() = default;
+  ~RosInterface();
 
   void Initialize(size_t ros_domain_id);
 
@@ -22,7 +27,11 @@ class RosInterface {
   rclcpp::Node::SharedPtr get_node() const;
   const std::string& GetDeviceId() const;
 
-  void AddObserver(std::function<void(void)> init_or_shutdown);
+  // Register an observer and return its ID for later removal
+  ObserverId AddObserver(std::function<void(void)> init_or_shutdown);
+
+  // Remove a specific observer by ID
+  void RemoveObserver(ObserverId id);
 
  private:
   rclcpp::Context::SharedPtr context_;
@@ -30,7 +39,9 @@ class RosInterface {
   rclcpp::Executor::SharedPtr executor_;
   std::string device_id_;
 
-  std::vector<std::function<void(void)>> observers_;
+  std::mutex observers_mutex_;
+  std::map<ObserverId, std::function<void(void)>> observers_;
+  ObserverId next_observer_id_ = 1;
 
   std::thread executor_thread_;
 
@@ -46,7 +57,12 @@ class Publisher {
  public:
   Publisher(RosInterface& ros) : ros_(ros) {}
 
-  virtual ~Publisher() {}
+  virtual ~Publisher() {
+    // Remove all registered observers when publisher is destroyed
+    for (ObserverId id : observer_ids_) {
+      ros_.RemoveObserver(id);
+    }
+  }
 
   // No moves - Observer code has `this` pointer
   Publisher(Publisher&& other) = delete;
@@ -80,7 +96,8 @@ class Publisher {
       publisher_ = node->template create_publisher<MsgT>(topic_, qos_);
       LOGI("Created publisher for topic %s", topic_.c_str());
       // Tell ROS interface to destroy publisher when it's shutdown
-      ros_.AddObserver(std::bind(&Publisher::DestroyPublisher, this));
+      ObserverId id = ros_.AddObserver(std::bind(&Publisher::DestroyPublisher, this));
+      observer_ids_.push_back(id);
     }
   }
 
@@ -98,7 +115,8 @@ class Publisher {
         CreatePublisher();
       } else {
         // Tell ROS interface to create publisher when it's initialized
-        ros_.AddObserver(std::bind(&Publisher::CreatePublisher, this));
+        ObserverId id = ros_.AddObserver(std::bind(&Publisher::CreatePublisher, this));
+        observer_ids_.push_back(id);
       }
     }
   }
@@ -150,5 +168,6 @@ class Publisher {
   std::string topic_ = "default_topic";
   rclcpp::QoS qos_ = rclcpp::QoS(1);
   typename rclcpp::Publisher<MsgT>::SharedPtr publisher_;
+  std::vector<ObserverId> observer_ids_;  // Track registered observers for cleanup
 };
 }  // namespace ros2_android

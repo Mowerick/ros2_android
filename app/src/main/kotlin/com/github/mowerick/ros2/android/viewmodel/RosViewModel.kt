@@ -239,7 +239,7 @@ class RosViewModel(
     }
 
     fun setDeviceId(id: String) {
-        _deviceId.value = sanitizeDeviceId(id)
+        _deviceId.value = id
     }
 
     fun startRos(domainId: Int, networkInterface: String, deviceId: String) {

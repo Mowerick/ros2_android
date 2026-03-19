@@ -27,6 +27,7 @@ add_library(android-ros SHARED
 
   # Core utilities
   core/time_utils.cc
+  core/network_manager.cc
 
   # ROS interface
   ros/ros_interface.cc
@@ -35,6 +36,9 @@ add_library(android-ros SHARED
   sensors/base/sensor.cc
   sensors/base/sensor_descriptor.cc
   sensors/sensors.cc
+
+  # Sensor manager
+  sensors/sensor_manager.cc
 
   # Sensor implementations
   sensors/impl/accelerometer_sensor.cc
