@@ -193,16 +193,60 @@ def main():
     discovery = SensorTopicDiscovery()
 
     try:
+        retry_count = 0
+        max_retries = 5
+
         while True:
+            # Try scanning twice before showing retry window
             topics = discovery.get_available_topics()
+            if not topics:
+                import time
+                time.sleep(0.5)
+                topics = discovery.get_available_topics()
 
             if not topics:
-                print("\n⚠ No sensor topics found!")
-                print("Make sure the ros2_android app is running and publishing data.")
-                print("\nRetrying in 3 seconds...")
+                retry_count += 1
+
+                if retry_count == 1:
+                    print(f"\n⚠ No sensor topics found! (Attempt {retry_count}/{max_retries})")
+                    print("Make sure the ros2_android app is running and publishing data.")
+                    print("\nRetrying every 3 seconds...")
+                else:
+                    # Move up 4 lines to the counter line, clear it and rewrite
+                    print(f"\033[4A\033[4K⚠ No sensor topics found! (Attempt {retry_count}/{max_retries})")
+                    # Move down 1 line to restore cursor position
+                    print("\033[3B", end='', flush=True)
+
                 import time
                 time.sleep(3)
+
+                # After max retries, show detailed error
+                if retry_count >= max_retries:
+                    print("\n❌ Failed to discover topics after 5 attempts!")
+                    print("\nPlease check:")
+                    print("  • Network connectivity (Wi-Fi/multicast enabled)")
+                    print("  • ROS 2 configuration (ROS_DOMAIN_ID matches)")
+                    print("  • ros2_android app is running and publishing data")
+                    print("  • No firewall blocking DDS traffic")
+
+                    retry = questionary.confirm(
+                        "\nWould you like to keep trying?",
+                        default=True,
+                        style=custom_style
+                    ).ask()
+
+                    if not retry:
+                        print("\n👋 Exiting. Goodbye!")
+                        break
+
+                    retry_count = 0
+                    display_welcome()
+                    print("🔍 Discovering available sensor topics...")
+
                 continue
+
+            # Reset retry count on success
+            retry_count = 0
 
             print(f"\n✓ Found {len(topics)} sensor topic(s)\n")
 

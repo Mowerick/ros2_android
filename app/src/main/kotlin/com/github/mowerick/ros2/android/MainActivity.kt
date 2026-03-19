@@ -95,7 +95,7 @@ class MainActivity : ComponentActivity(), PermissionHandler, NetworkInterfacePro
                 ?.map { it.name }
                 ?.toTypedArray()
                 ?: emptyArray()
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             emptyArray()
         }
     }
