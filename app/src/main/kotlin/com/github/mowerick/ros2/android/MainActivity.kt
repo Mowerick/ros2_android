@@ -122,7 +122,12 @@ class MainActivity : ComponentActivity(), PermissionHandler, NetworkInterfacePro
                     factory = RosViewModelFactory(
                         applicationContext,
                         this@MainActivity,  // PermissionHandler
-                        this@MainActivity   // NetworkInterfaceProvider
+                        this@MainActivity,  // NetworkInterfaceProvider
+                        initialScreen = if (intent.getBooleanExtra("navigate_to_settings", false)) {
+                            Screen.RosSetup
+                        } else {
+                            Screen.Dashboard
+                        }
                     )
                 )
                 LaunchedEffect(Unit) {
@@ -168,8 +173,7 @@ class MainActivity : ComponentActivity(), PermissionHandler, NetworkInterfacePro
                         selectedNetworkInterface = selectedNetworkInterface,
                         onBack = { vm.navigateBack() },
                         onStartRos = { domainId, iface, devId -> vm.startRos(domainId, iface, devId) },
-                        onRestartRos = { domainId, iface, devId -> vm.restartRos(domainId, iface, devId) },
-                        onStopRos = { vm.stopRos() },
+                        onResetRos = { vm.resetRos() },
                         onRefreshInterfaces = { vm.refreshNetworkInterfaces() },
                         onDomainIdChanged = { vm.setDomainId(it) },
                         onDeviceIdChanged = { vm.setDeviceId(it) }

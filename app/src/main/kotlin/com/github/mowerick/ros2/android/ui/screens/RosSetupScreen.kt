@@ -48,8 +48,7 @@ fun RosSetupScreen(
     selectedNetworkInterface: String?,
     onBack: () -> Unit,
     onStartRos: (domainId: Int, networkInterface: String, deviceId: String) -> Unit,
-    onRestartRos: (domainId: Int, networkInterface: String, deviceId: String) -> Unit,
-    onStopRos: () -> Unit = {},
+    onResetRos: () -> Unit = {},
     onRefreshInterfaces: () -> Unit = {},
     onDomainIdChanged: (Int) -> Unit,
     onDeviceIdChanged: (String) -> Unit,
@@ -206,44 +205,44 @@ fun RosSetupScreen(
                 }
             }
 
-            // Start/Restart button
-            if (rosStarted) {
-                OutlinedButton(
-                    onClick = { onRestartRos(rosDomainId, selectedInterface, deviceId) },
-                    enabled = rosDomainId >= 0 && networkInterfaces.isNotEmpty() && deviceId.isNotBlank(),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp)
-                ) {
-                    Text("Restart ROS", style = MaterialTheme.typography.titleMedium)
-                }
-            } else {
-                Button(
-                    onClick = { onStartRos(rosDomainId, selectedInterface, deviceId) },
-                    enabled = rosDomainId >= 0 && networkInterfaces.isNotEmpty() && deviceId.isNotBlank(),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp)
-                ) {
-                    Text("Start ROS", style = MaterialTheme.typography.titleMedium)
-                }
+            // Start button
+            Button(
+                onClick = { onStartRos(rosDomainId, selectedInterface, deviceId) },
+                enabled = !rosStarted && rosDomainId >= 0 && networkInterfaces.isNotEmpty() && deviceId.isNotBlank(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+            ) {
+                Text(
+                    text = if (rosStarted) "ROS Running" else "Start ROS",
+                    style = MaterialTheme.typography.titleMedium
+                )
             }
 
-            // Stop button
+            // Reset button (kills and restarts app)
             Button(
-                onClick = onStopRos,
+                onClick = onResetRos,
                 enabled = rosStarted,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.Red,
-                    contentColor = Color.White,
-                    disabledContainerColor = Color.Red.copy(alpha = 0.3f),
-                    disabledContentColor = Color.White.copy(alpha = 0.5f)
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError,
+                    disabledContainerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.3f),
+                    disabledContentColor = MaterialTheme.colorScheme.onError.copy(alpha = 0.5f)
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp)
             ) {
-                Text("Stop ROS", style = MaterialTheme.typography.titleMedium)
+                Text("Reset ROS (Restart App)", style = MaterialTheme.typography.titleMedium)
+            }
+
+            if (rosStarted) {
+                Text(
+                    text = "To change ROS settings, use Reset ROS button",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
             }
         }
     }

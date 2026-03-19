@@ -33,23 +33,6 @@ void RosInterface::Initialize(size_t ros_domain_id) {
   NotifyInitChanged();
 }
 
-void RosInterface::Shutdown() {
-  // Signal shutdown to ROS context
-  context_->shutdown("RosInterface asked to Shutdown");
-
-  // Wait for executor thread to finish
-  executor_thread_.join();
-
-  // Clear observers without notifying them - publishers already disabled in jni_bridge
-  // Notifying would cause double-free since Disable() already called DestroyPublisher()
-  observers_.clear();
-
-  // Cleanup resources
-  node_.reset();
-  executor_.reset();
-  context_.reset();
-}
-
 bool RosInterface::Initialized() const {
   return context_ && context_->is_valid();
 }

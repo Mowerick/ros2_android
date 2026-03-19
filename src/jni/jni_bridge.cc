@@ -123,11 +123,10 @@ public:
     LOGI("Generated CycloneDDS config for interface: %s, domain: %d, device: %s",
          network_interface.c_str(), ros_domain_id, device_id.c_str());
 
-    // StartRos should only be called on first start, not restart
-    // Use RestartRos for restarting with new configuration
+    // Check if already initialized - ignore if already running
     if (ros_ && ros_->Initialized())
     {
-      LOGW("ROS is already initialized. Use RestartRos to change configuration.");
+      LOGW("ROS is already initialized. Configuration not changed.");
       return;
     }
 
@@ -207,85 +206,12 @@ public:
     }
   }
 
-  void StopRos()
-  {
-    LOGI("Stopping ROS");
-
-    // First shutdown ROS context to stop executor thread
-    if (ros_ && ros_->Initialized())
-    {
-      ros_->Shutdown();
-    }
-
-    // Now safe to disable controllers (destroy publishers)
-    LOGI("Disabling all sensors and cameras");
-    for (auto &controller : controllers_)
-    {
-      if (controller->IsEnabled())
-      {
-        controller->Disable();
-      }
-    }
-
-    for (auto &camera : camera_controllers_)
-    {
-      if (camera->IsEnabled())
-      {
-        camera->Disable();
-      }
-    }
-  }
-
-  void RestartRos(int32_t ros_domain_id, const std::string &network_interface,
-                  const std::string &device_id)
-  {
-    LOGI("Restarting ROS with device_id: %s, domain: %d, interface: %s",
-         device_id.c_str(), ros_domain_id, network_interface.c_str());
-
-    // Step 1: Shutdown ROS context first to stop executor thread
-    // This prevents race conditions when destroying publishers
-    if (ros_ && ros_->Initialized())
-    {
-      LOGI("Shutting down existing ROS context");
-      ros_->Shutdown();
-    }
-
-    // Step 2: Disable all controllers (destroy publishers)
-    // Safe now because executor thread is stopped
-    LOGI("Disabling all controllers");
-    for (auto &controller : controllers_)
-    {
-      if (controller->IsEnabled())
-        controller->Disable();
-    }
-    for (auto &camera : camera_controllers_)
-    {
-      if (camera->IsEnabled())
-        camera->Disable();
-    }
-
-    // Step 3: Clear controller vectors to prepare for new controllers
-    LOGI("Clearing controller vectors");
-    controllers_.clear();
-    camera_controllers_.clear();
-    started_cameras_ = false;
-
-    // Step 4: Start fresh with new configuration
-    LOGI("Starting ROS with new configuration");
-    StartRos(ros_domain_id, network_interface, device_id);
-  }
 
   void Cleanup()
   {
     LOGI("Cleaning up AndroidApp");
 
-    // First shutdown ROS context to stop executor thread
-    if (ros_ && ros_->Initialized())
-    {
-      ros_->Shutdown();
-    }
-
-    // Now safe to disable controllers (destroy publishers)
+    // Disable controllers (destroy publishers)
     for (auto &controller : controllers_)
     {
       if (controller->IsEnabled())
@@ -642,28 +568,6 @@ extern "C"
     env->ReleaseStringUTFChars(device_id, dev_id);
   }
 
-  JNIEXPORT void JNICALL
-  Java_com_github_mowerick_ros2_android_NativeBridge_nativeStopRos(
-      JNIEnv * /*env*/, jobject /*thiz*/)
-  {
-    if (!g_app)
-      return;
-    g_app->StopRos();
-  }
-
-  JNIEXPORT void JNICALL
-  Java_com_github_mowerick_ros2_android_NativeBridge_nativeRestartRos(
-      JNIEnv *env, jobject /*thiz*/, jint domain_id, jstring network_interface, jstring device_id)
-  {
-    if (!g_app)
-      return;
-
-    const char *iface = env->GetStringUTFChars(network_interface, nullptr);
-    const char *dev_id = env->GetStringUTFChars(device_id, nullptr);
-    g_app->RestartRos(domain_id, std::string(iface), std::string(dev_id));
-    env->ReleaseStringUTFChars(network_interface, iface);
-    env->ReleaseStringUTFChars(device_id, dev_id);
-  }
 
   JNIEXPORT jobjectArray JNICALL
   Java_com_github_mowerick_ros2_android_NativeBridge_nativeGetSensorList(

@@ -1,6 +1,7 @@
 package com.github.mowerick.ros2.android.ui.screens
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -19,6 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.github.mowerick.ros2.android.model.CameraInfo
 import com.github.mowerick.ros2.android.model.SensorInfo
@@ -86,7 +88,23 @@ fun BuiltInSensorsScreen(
                     ListItem(
                         headlineContent = { Text(camera.name) },
                         supportingContent = {
-                            Text(camera.imageTopicName)
+                            Column {
+                                Text(
+                                    text = "• ${camera.imageTopicName}",
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "• ${camera.compressedImageTopicName}",
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "• ${camera.infoTopicName}",
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         },
                         trailingContent = {
                             Switch(

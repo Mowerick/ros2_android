@@ -1,11 +1,13 @@
 package com.github.mowerick.ros2.android.viewmodel
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.net.wifi.WifiManager
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.mowerick.ros2.android.GpsManager
+import com.github.mowerick.ros2.android.MainActivity
 import com.github.mowerick.ros2.android.NativeBridge
 import com.github.mowerick.ros2.android.interfaces.NetworkInterfaceProvider
 import com.github.mowerick.ros2.android.interfaces.PermissionHandler
@@ -21,6 +23,7 @@ import com.github.mowerick.ros2.android.model.Severity
 import com.github.mowerick.ros2.android.model.TopicInfo
 import com.github.mowerick.ros2.android.util.getDefaultDeviceId
 import com.github.mowerick.ros2.android.util.sanitizeDeviceId
+import com.jakewharton.processphoenix.ProcessPhoenix
 import java.net.NetworkInterface
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -40,10 +43,11 @@ sealed class Screen {
 class RosViewModel(
     private val applicationContext: Context,
     private val permissionHandler: PermissionHandler,
-    private val networkProvider: NetworkInterfaceProvider
+    private val networkProvider: NetworkInterfaceProvider,
+    initialScreen: Screen = Screen.Dashboard
 ) : ViewModel() {
 
-    private val _screen = MutableStateFlow<Screen>(Screen.Dashboard)
+    private val _screen = MutableStateFlow<Screen>(initialScreen)
     val screen: StateFlow<Screen> = _screen
 
     private val _rosStarted = MutableStateFlow(false)
@@ -251,19 +255,23 @@ class RosViewModel(
         refreshSensorsAndCameras()
     }
 
-    fun restartRos(domainId: Int, networkInterface: String, deviceId: String) {
-        val sanitizedDeviceId = sanitizeDeviceId(deviceId)
-        _deviceId.value = sanitizedDeviceId
-        NativeBridge.nativeRestartRos(domainId, networkInterface, sanitizedDeviceId)
-        _rosDomainId.value = domainId
-        _selectedNetworkInterface.value = networkInterface
-        _rosStarted.value = true
-        refreshSensorsAndCameras()
+    fun resetRos() {
+        android.util.Log.i("RosViewModel", "Resetting ROS - restarting app")
 
-        // Start GPS manager to always collect location data for display
-        android.util.Log.i("RosViewModel", "Starting GPS manager for data collection")
-        val launcher = permissionHandler.getLocationSettingsLauncher()
-        gpsManager.startWithChecks(launcher)
+        // Release multicast lock before restart
+        releaseMulticastLock()
+
+        // Stop GPS manager
+        gpsManager.stop()
+
+        // Source - https://stackoverflow.com/a/74613696
+        // Posted by TIMBLOCKER, modified by community. See post 'Timeline' for change history
+        // Retrieved 2026-03-19, License - CC BY-SA 4.0
+        // Restart the app and navigate to settings screen using ProcessPhoenix
+        val intent = Intent(applicationContext, MainActivity::class.java).apply {
+            putExtra("navigate_to_settings", true)
+        }
+        ProcessPhoenix.triggerRebirth(applicationContext, intent)
     }
 
     fun onLocationSettingsEnabled() {
@@ -276,16 +284,6 @@ class RosViewModel(
     fun onLocationSettingsCancelled() {
         android.util.Log.w("RosViewModel", "User cancelled location settings dialog")
         addNotification("GPS: Location services required", Severity.WARNING)
-    }
-
-    fun stopRos() {
-        // Stop GPS manager
-        gpsManager.stop()
-
-        NativeBridge.nativeStopRos()
-        releaseMulticastLock()
-        _rosStarted.value = false
-        refreshSensorsAndCameras()
     }
 
     private fun acquireMulticastLock() {

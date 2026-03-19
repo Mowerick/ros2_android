@@ -15,7 +15,6 @@ class RosInterface {
   ~RosInterface() = default;
 
   void Initialize(size_t ros_domain_id);
-  void Shutdown();
 
   bool Initialized() const;
 
