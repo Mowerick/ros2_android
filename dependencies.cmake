@@ -26,6 +26,16 @@ macro(build_crosscompile_dependencies)
       -DENABLE_STATIC=ON
       -DWITH_TURBOJPEG=ON)
 
+  # YDLidar SDK - LIDAR communication library
+  dep_build(ydlidar_sdk CMAKE
+    SOURCE_DIR "deps/ydlidar_sdk"
+    CMAKE_ARGS ${extra_cmake_args}
+      -DBUILD_SHARED_LIBS=OFF
+      -DBUILD_EXAMPLES=OFF
+      -DBUILD_CSHARP=OFF
+      -DBUILD_TEST=OFF
+      -DCMAKE_CXX_FLAGS="-Wno-format-security")
+
   dep_build(ament_index_python PIP
     SOURCE_DIR "deps/ament_index/ament_index_python"
     DEPENDENCIES )
@@ -420,5 +430,11 @@ macro(build_crosscompile_dependencies)
   dep_build(visualization_msgs CMAKE
     SOURCE_DIR "deps/common_interfaces/visualization_msgs"
     DEPENDENCIES rosidl_runtime_cpp rosidl_typesupport_interface geometry_msgs ament_cmake_export_include_directories ament_cmake_export_link_flags ament_cmake_include_directories ament_cmake_export_interfaces std_msgs ament_cmake_export_libraries sensor_msgs ament_cmake_core rosidl_typesupport_introspection_cpp ament_cmake_version ament_cmake_python ament_cmake_test rcutils rosidl_runtime_c ament_cmake_export_dependencies ament_cmake_target_dependencies ament_cmake_gen_version_h builtin_interfaces ament_cmake ament_cmake_export_definitions rosidl_typesupport_c rosidl_cmake rosidl_typesupport_introspection_c rosidl_generator_cpp ament_cmake_export_targets rosidl_typesupport_cpp rcpputils rosidl_generator_c rosidl_default_generators ament_package
+    CMAKE_ARGS ${extra_cmake_args})
+
+  # YDLidar ROS2 Driver - LIDAR ROS2 node
+  dep_build(ydlidar_ros2_driver CMAKE
+    SOURCE_DIR "deps/ydlidar_ros2_driver"
+    DEPENDENCIES ament_cmake rclcpp sensor_msgs visualization_msgs geometry_msgs std_srvs ydlidar_sdk
     CMAKE_ARGS ${extra_cmake_args})
 endmacro()

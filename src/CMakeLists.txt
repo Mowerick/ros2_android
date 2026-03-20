@@ -16,6 +16,10 @@ find_library(LIBYUV_LIBRARY yuv)
 find_path(TURBOJPEG_INCLUDE_DIR turbojpeg.h)
 find_library(TURBOJPEG_LIBRARY NAMES turbojpeg turbojpeg-static)
 
+# Find YDLIDAR SDK
+find_path(YDLIDAR_INCLUDE_DIR CYdLidar.h PATH_SUFFIXES src)
+find_library(YDLIDAR_LIBRARY NAMES ydlidar_sdk libydlidar_sdk)
+
 set(CMAKE_VERBOSE_MAKEFILE ON)
 
 add_library(android-ros SHARED
@@ -82,11 +86,13 @@ target_link_libraries(android-ros PRIVATE
     ${geometry_msgs_TARGETS}
     ${sensor_msgs_TARGETS}
     ${LIBYUV_LIBRARY}
-    ${TURBOJPEG_LIBRARY})
+    ${TURBOJPEG_LIBRARY}
+    ${YDLIDAR_LIBRARY})
 target_include_directories(android-ros PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
     ${LIBYUV_INCLUDE_DIR}
-    ${TURBOJPEG_INCLUDE_DIR})
+    ${TURBOJPEG_INCLUDE_DIR}
+    ${YDLIDAR_INCLUDE_DIR})
 # LTO to reduce APK size
 set_property(TARGET android-ros PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
 
