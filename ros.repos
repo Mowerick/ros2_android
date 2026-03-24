@@ -120,8 +120,4 @@ repositories:
   ydlidar_sdk:
     type: git
     url: https://github.com/YDLIDAR/YDLidar-SDK.git
-    version: master
-  ydlidar_ros2_driver:
-    type: git
-    url: https://github.com/YDLIDAR/ydlidar_ros2_driver.git
-    version: humble
+    version: d37ace902f73b07fe5f6dd6d8deaa1181278a7f6

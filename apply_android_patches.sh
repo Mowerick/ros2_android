@@ -21,13 +21,4 @@ else
   echo "    ⚠ YDLIDAR SDK not found, skipping"
 fi
 
-# YDLIDAR ROS2 Driver patches
-if [ -d "$DEPS_DIR/ydlidar_ros2_driver" ]; then
-  echo "  - Patching YDLIDAR ROS2 Driver..."
-  cp "$PATCHES_DIR/ydlidar_ros2_driver/CMakeLists.txt" "$DEPS_DIR/ydlidar_ros2_driver/CMakeLists.txt"
-  echo "    ✓ YDLIDAR ROS2 Driver patched"
-else
-  echo "    ⚠ YDLIDAR ROS2 Driver not found, skipping"
-fi
-
 echo "Android patches applied successfully!"

@@ -7,6 +7,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <unistd.h>
 
 #include "camera/base/camera_descriptor.h"
 #include "camera/camera_manager.h"
@@ -372,9 +373,9 @@ public:
 
   // LIDAR device management
 
-  bool ConnectLidar(int fd, const std::string& device_path, const std::string& unique_id)
+  bool ConnectLidar(const std::string& device_path, const std::string& unique_id, jobject usb_manager)
   {
-    LOGI("ConnectLidar: fd=%d, path=%s, id=%s", fd, device_path.c_str(), unique_id.c_str());
+    LOGI("ConnectLidar: path=%s, id=%s", device_path.c_str(), unique_id.c_str());
 
     // Check if already connected
     for (const auto& controller : lidar_controllers_)
@@ -386,8 +387,8 @@ public:
       }
     }
 
-    // Create YDLidar device
-    auto device = std::make_unique<ros2_android::YDLidarDevice>(fd, device_path, unique_id);
+    // Create YDLidar device with USB manager for PTY bridge
+    auto device = std::make_unique<ros2_android::YDLidarDevice>(device_path, unique_id, usb_manager);
 
     // Create controller (dereference optional ros_)
     auto controller = std::make_unique<ros2_android::LidarController>(std::move(device), *ros_);
@@ -990,7 +991,7 @@ extern "C"
   // LIDAR device management
   JNIEXPORT jboolean JNICALL
   Java_com_github_mowerick_ros2_android_NativeBridge_nativeConnectLidar(
-      JNIEnv *env, jobject /*thiz*/, jint fd, jstring device_path, jstring unique_id)
+      JNIEnv *env, jobject /*thiz*/, jstring device_path, jstring unique_id, jobject usb_manager)
   {
     if (!g_app)
       return JNI_FALSE;
@@ -998,7 +999,7 @@ extern "C"
     const char *path = env->GetStringUTFChars(device_path, nullptr);
     const char *id = env->GetStringUTFChars(unique_id, nullptr);
 
-    bool success = g_app->ConnectLidar(fd, std::string(path), std::string(id));
+    bool success = g_app->ConnectLidar(std::string(path), std::string(id), usb_manager);
 
     env->ReleaseStringUTFChars(device_path, path);
     env->ReleaseStringUTFChars(unique_id, id);
@@ -1076,6 +1077,61 @@ extern "C"
     env->ReleaseStringUTFChars(unique_id, id);
 
     return success ? JNI_TRUE : JNI_FALSE;
+  }
+
+  // PTY Bridge: LIDAR → SDK data path
+  JNIEXPORT void JNICALL
+  Java_com_github_mowerick_ros2_android_UsbDeviceManager_nativeWriteToPtyMaster(
+      JNIEnv *env, jobject /*thiz*/, jstring unique_id, jbyteArray data)
+  {
+    if (!g_app)
+      return;
+
+    const char *id = env->GetStringUTFChars(unique_id, nullptr);
+    std::string device_id(id);
+    env->ReleaseStringUTFChars(unique_id, id);
+
+    // Find the YDLidarDevice instance
+    ros2_android::YDLidarDevice* device = nullptr;
+    for (auto& controller : g_app->lidar_controllers_)
+    {
+      if (controller->GetUniqueId() == device_id)
+      {
+        device = dynamic_cast<ros2_android::YDLidarDevice*>(controller->GetDevice());
+        break;
+      }
+    }
+
+    if (!device)
+    {
+      LOGE("LIDAR device not found for PTY write: %s", device_id.c_str());
+      return;
+    }
+
+    // Convert jbyteArray to C++ buffer
+    jsize len = env->GetArrayLength(data);
+    jbyte* bytes = env->GetByteArrayElements(data, nullptr);
+
+    // Write to PTY master with retry for partial writes
+    int pty_fd = device->GetPtyMasterFd();
+    ssize_t total_written = 0;
+    while (total_written < len)
+    {
+      ssize_t written = write(pty_fd, bytes + total_written, len - total_written);
+      if (written < 0)
+      {
+        LOGE("PTY write error: %s", strerror(errno));
+        break;
+      }
+      total_written += written;
+    }
+
+    env->ReleaseByteArrayElements(data, bytes, JNI_ABORT);
+
+    if (total_written == len)
+    {
+      LOGI("Forwarded %d bytes from USB to PTY master", len);
+    }
   }
 
 } // extern "C"

@@ -486,23 +486,22 @@ class RosViewModel(
         // Request permission if needed
         usbDeviceManager.requestPermission(usbDevice) { granted ->
             if (granted) {
-                // Open device and get file descriptor
-                val fdAndPath = usbDeviceManager.openDevice(usbDevice)
-                if (fdAndPath != null) {
-                    val (fd, path) = fdAndPath
-                    android.util.Log.i("RosViewModel", "USB device opened: fd=$fd, path=$path")
+                // Open serial port with usb-serial-for-android
+                val serialSuccess = usbDeviceManager.openSerialPort(usbDevice, uniqueId)
+                if (!serialSuccess) {
+                    addNotification("Failed to open USB serial port", Severity.ERROR)
+                    return@requestPermission
+                }
 
-                    // Pass FD to native layer
-                    val success = NativeBridge.nativeConnectLidar(fd, path, uniqueId)
-                    if (success) {
-                        addNotification("LIDAR connected: $path", Severity.WARNING)
-                        refreshExternalDevices()
-                    } else {
-                        addNotification("Failed to initialize LIDAR in native layer", Severity.ERROR)
-                        usbDeviceManager.closeDevice()
-                    }
+                // Connect native LIDAR with PTY bridge
+                val path = usbDevice.deviceName
+                val success = NativeBridge.nativeConnectLidar(path, uniqueId, usbDeviceManager)
+                if (success) {
+                    addNotification("LIDAR connected with PTY bridge", Severity.WARNING)
+                    refreshExternalDevices()
                 } else {
-                    addNotification("Failed to open LIDAR device", Severity.ERROR)
+                    usbDeviceManager.closeSerialPort()
+                    addNotification("Failed to initialize LIDAR", Severity.ERROR)
                 }
             } else {
                 addNotification("USB permission denied for LIDAR", Severity.ERROR)
@@ -513,7 +512,7 @@ class RosViewModel(
     fun disconnectLidar(uniqueId: String) {
         val success = NativeBridge.nativeDisconnectLidar(uniqueId)
         if (success) {
-            usbDeviceManager.closeDevice()
+            usbDeviceManager.closeSerialPort()
             addNotification("LIDAR disconnected", Severity.WARNING)
             refreshExternalDevices()
         } else {
@@ -560,15 +559,36 @@ class RosViewModel(
     }
 
     private fun refreshExternalDevices() {
-        // Detect USB LIDAR devices
-        val lidarDevices = usbDeviceManager.detectLidarDevices()
-        _externalDevices.value = lidarDevices.map { device ->
-            usbDeviceManager.deviceToInfo(
-                device = device,
-                connected = usbDeviceManager.hasPermission(device),
-                enabled = false  // TODO: Phase 3 - query native layer for enabled status
-            )
+        // Get connected devices from native layer (ground truth for connection state)
+        val nativeDevices = try {
+            NativeBridge.nativeGetLidarList().toList()
+        } catch (e: Exception) {
+            android.util.Log.e("RosViewModel", "Failed to get native LIDAR list", e)
+            emptyList()
         }
+
+        // Detect USB LIDAR devices (potential devices that can be connected)
+        val usbDevices = usbDeviceManager.detectLidarDevices()
+
+        // Build list: prioritize native layer state, fall back to USB detection
+        val deviceMap = mutableMapOf<String, ExternalDeviceInfo>()
+
+        // First add all USB-detected devices (disconnected state)
+        usbDevices.forEach { usbDevice ->
+            val info = usbDeviceManager.deviceToInfo(
+                device = usbDevice,
+                connected = false,
+                enabled = false
+            )
+            deviceMap[info.uniqueId] = info
+        }
+
+        // Then override with native layer state (connected devices)
+        nativeDevices.forEach { nativeDevice ->
+            deviceMap[nativeDevice.uniqueId] = nativeDevice
+        }
+
+        _externalDevices.value = deviceMap.values.toList()
     }
 
     private fun refreshCameras() {

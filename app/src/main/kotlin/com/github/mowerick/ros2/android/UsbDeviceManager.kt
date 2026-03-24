@@ -12,12 +12,20 @@ import android.os.Build
 import android.util.Log
 import com.github.mowerick.ros2.android.model.ExternalDeviceInfo
 import com.github.mowerick.ros2.android.model.ExternalDeviceType
+import com.hoho.android.usbserial.driver.UsbSerialPort
+import com.hoho.android.usbserial.driver.UsbSerialProber
+import com.hoho.android.usbserial.util.SerialInputOutputManager
+import java.io.IOException
 
-class UsbDeviceManager(private val context: Context) {
+class UsbDeviceManager(private val context: Context) : SerialInputOutputManager.Listener {
 
     private val usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
-    private var connection: UsbDeviceConnection? = null
     private var permissionCallback: ((Boolean) -> Unit)? = null
+
+    // USB serial infrastructure
+    private var serialPort: UsbSerialPort? = null
+    private var serialManager: SerialInputOutputManager? = null
+    private var currentDeviceId: String? = null
 
     private val permissionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -116,37 +124,106 @@ class UsbDeviceManager(private val context: Context) {
         Log.i(TAG, "Requesting USB permission for ${device.deviceName}")
     }
 
-    /**
-     * Open USB device and return file descriptor + device path
-     * Returns null if device cannot be opened
-     */
-    fun openDevice(device: UsbDevice): Pair<Int, String>? {
-        if (!usbManager.hasPermission(device)) {
-            Log.w(TAG, "Cannot open device ${device.deviceName}: no permission")
-            return null
+    // SerialInputOutputManager.Listener interface - LIDAR→SDK data path
+    override fun onNewData(data: ByteArray) {
+        currentDeviceId?.let { deviceId ->
+            try {
+                nativeWriteToPtyMaster(deviceId, data)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to forward LIDAR data to PTY: ${e.message}")
+            }
         }
+    }
 
-        closeDevice()  // Close any existing connection
-
-        connection = usbManager.openDevice(device)
-        if (connection == null) {
-            Log.e(TAG, "Failed to open USB device ${device.deviceName}")
-            return null
-        }
-
-        val fd = connection!!.fileDescriptor
-        val devicePath = device.deviceName
-
-        Log.i(TAG, "Opened USB device: fd=$fd, path=$devicePath")
-        return Pair(fd, devicePath)
+    override fun onRunError(e: Exception) {
+        Log.e(TAG, "Serial port error: ${e.message}")
+        closeSerialPort()
     }
 
     /**
-     * Close current USB device connection
+     * Open serial port for LIDAR device (called after USB permission granted)
+     * @param device USB device to open
+     * @param uniqueId Device identifier for PTY bridge
+     * @return true if successful, false otherwise
      */
-    fun closeDevice() {
-        connection?.close()
-        connection = null
+    fun openSerialPort(device: UsbDevice, uniqueId: String): Boolean {
+        try {
+            // Close existing connection if any
+            closeSerialPort()
+
+            // Find USB serial driver
+            val drivers = UsbSerialProber.getDefaultProber().findAllDrivers(usbManager)
+            val driver = drivers.firstOrNull { it.device == device }
+            if (driver == null) {
+                Log.e(TAG, "No USB serial driver found for ${device.deviceName}")
+                return false
+            }
+
+            // Open connection and get first port
+            val connection = usbManager.openDevice(device)
+            if (connection == null) {
+                Log.e(TAG, "Failed to open USB device ${device.deviceName}")
+                return false
+            }
+
+            val port = driver.ports[0]
+            port.open(connection)
+
+            // Configure serial parameters: 230400 baud, 8N1 (no parity, 1 stop bit)
+            port.setParameters(
+                230400,  // baud rate
+                8,       // data bits
+                UsbSerialPort.STOPBITS_1,  // stop bits
+                UsbSerialPort.PARITY_NONE  // parity
+            )
+
+            // Create SerialInputOutputManager for async I/O
+            val manager = SerialInputOutputManager(port, this)
+            manager.start()
+
+            // Store state
+            serialPort = port
+            serialManager = manager
+            currentDeviceId = uniqueId
+
+            Log.i(TAG, "Opened serial port for $uniqueId: 230400 baud 8N1")
+            return true
+
+        } catch (e: IOException) {
+            Log.e(TAG, "Failed to open serial port: ${e.message}")
+            closeSerialPort()
+            return false
+        }
+    }
+
+    /**
+     * Write data to physical USB LIDAR (called from C++ PtyReadThread via JNI)
+     * SDK→LIDAR command path
+     */
+    fun writeToPhysicalUsb(data: ByteArray) {
+        try {
+            serialPort?.write(data, 1000)  // 1 second timeout
+        } catch (e: IOException) {
+            Log.e(TAG, "Failed to write to USB: ${e.message}")
+        }
+    }
+
+    /**
+     * Close serial port and release resources
+     */
+    fun closeSerialPort() {
+        serialManager?.stop()
+        serialManager = null
+
+        try {
+            serialPort?.close()
+        } catch (e: IOException) {
+            // Ignore close errors
+        }
+        serialPort = null
+        currentDeviceId = null
+
+        Log.i(TAG, "Serial port closed")
     }
 
     /**
@@ -157,16 +234,21 @@ class UsbDeviceManager(private val context: Context) {
     }
 
     /**
-     * Cleanup receiver on destroy
+     * Cleanup receiver and serial port on destroy
      */
     fun destroy() {
+        closeSerialPort()
         try {
             context.unregisterReceiver(permissionReceiver)
         } catch (e: Exception) {
             // Already unregistered
         }
-        closeDevice()
     }
+
+    /**
+     * JNI bridge to forward LIDAR data to C++ PTY master
+     */
+    private external fun nativeWriteToPtyMaster(uniqueId: String, data: ByteArray)
 
     companion object {
         private const val TAG = "UsbDeviceManager"

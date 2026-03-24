@@ -43,6 +43,11 @@ namespace ros2_android
     std::string GetUniqueId() const;
     std::string GetDevicePath() const;
 
+    /**
+     * Get pointer to the underlying LIDAR device (for JNI PTY writes)
+     */
+    LidarDevice* GetDevice() const { return device_.get(); }
+
   protected:
     /**
      * Called when new LaserScan data is available from device

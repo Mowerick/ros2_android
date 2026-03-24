@@ -6,6 +6,10 @@
 #include "core/sensor_data_callback_queue.h"
 #include "jni/jvm.h"
 
+// TODO: Remove roundtrip for GPS location data. Currently we keep the same architecture
+// as used with all the built-in sensors which are accessed directly in the native layer,
+// but GPS data is handed down to the native layer from Java. This creates a redundant
+// data roundtrip to keep the architecture uniform.
 namespace ros2_android
 {
 

@@ -1,31 +1,39 @@
 #pragma once
 
 #include <atomic>
+#include <memory>
 #include <string>
 #include <thread>
+#include <poll.h>
+#include <jni.h>
 
 #include "lidar/base/lidar_device.h"
+
+// Forward declare YDLIDAR SDK class to avoid header pollution
+class CYdLidar;
 
 namespace ros2_android
 {
 
   /**
-   * YDLIDAR device implementation
-   * Uses file descriptor from USB Host API for serial communication
+   * YDLIDAR device implementation using YDLIDAR SDK
+   * Model-agnostic: SDK auto-detects LIDAR model and configures parameters
    *
-   * Phase 4.3: Basic implementation with FD-based serial I/O
-   * Future: Integrate full YDLIDAR SDK for protocol handling
+   * Supports all YDLIDAR models through SDK:
+   * - TG series (TG15, TG30, TG50) - TOF lidars
+   * - Triangle series (X2, X4, G4, G6, etc.)
+   * - Other series (GS, T, SDM, etc.)
    */
   class YDLidarDevice : public LidarDevice
   {
   public:
     /**
-     * Create YDLIDAR device
-     * @param fd File descriptor from USB Host API
-     * @param device_path USB device path (e.g., "/dev/bus/usb/001/002")
+     * Create YDLIDAR device with PTY bridge
+     * @param device_path Device path (unused, PTY slave will be auto-generated)
      * @param unique_id Unique identifier for this device
+     * @param usb_manager JNI reference to UsbDeviceManager instance
      */
-    YDLidarDevice(int fd, const std::string &device_path, const std::string &unique_id);
+    YDLidarDevice(const std::string &device_path, const std::string &unique_id, jobject usb_manager);
     virtual ~YDLidarDevice();
 
     // LidarDevice interface
@@ -37,19 +45,27 @@ namespace ros2_android
     const std::string &GetUniqueId() const override { return unique_id_; }
     const std::string &GetDevicePath() const override { return device_path_; }
 
+    /**
+     * Get PTY master file descriptor (for JNI write operations)
+     */
+    int GetPtyMasterFd() const { return pty_master_fd_; }
+
   private:
     /**
-     * Read thread - reads data from file descriptor and emits LaserScanData
+     * Read thread - polls SDK for scan data and emits LaserScanData
      */
     void ReadThread();
 
     /**
-     * Generate test scan data (Phase 4.3 stub)
-     * Phase 4.4+ will replace with actual YDLIDAR protocol parsing
+     * Convert SDK LaserScan to our LaserScanData format
      */
-    void GenerateTestScan();
+    void ConvertScan(const void *sdk_scan);
 
-    int fd_;
+    /**
+     * PTY read thread - shuttles SDK commands to physical USB
+     */
+    void PtyReadThread();
+
     std::string device_path_;
     std::string unique_id_;
 
@@ -57,12 +73,15 @@ namespace ros2_android
     std::atomic<bool> shutdown_;
     std::thread read_thread_;
 
-    // YDLIDAR-specific parameters (will come from device in full implementation)
-    float angle_min_ = -3.14159f;    // -π rad
-    float angle_max_ = 3.14159f;     // +π rad
-    float range_min_ = 0.1f;         // 0.1m
-    float range_max_ = 12.0f;        // 12m (typical for YDLIDAR X4)
-    float scan_frequency_ = 10.0f;   // 10 Hz
+    // PTY bridge infrastructure
+    int pty_master_fd_;               // PTY master file descriptor
+    std::string pty_slave_path_;      // PTY slave path (e.g., /dev/pts/1)
+    std::thread pty_read_thread_;     // Thread: SDK → LIDAR commands
+    jobject usb_manager_ref_;         // Global ref to UsbDeviceManager instance
+    jmethodID write_to_usb_method_;   // Cached writeToPhysicalUsb method ID
+
+    // YDLIDAR SDK instance
+    std::unique_ptr<CYdLidar> lidar_;
   };
 
 } // namespace ros2_android

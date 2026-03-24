@@ -68,6 +68,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.7.0")
     implementation("com.google.android.gms:play-services-location:21.0.1")
+    implementation ("com.github.mik3y:usb-serial-for-android:3.4.6")
     // Source - https://stackoverflow.com/a/74613696
     // Posted by TIMBLOCKER, modified by community. See post 'Timeline' for change history
     // Retrieved 2026-03-19, License - CC BY-SA 4.0

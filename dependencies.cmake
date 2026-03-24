@@ -27,14 +27,30 @@ macro(build_crosscompile_dependencies)
       -DWITH_TURBOJPEG=ON)
 
   # YDLidar SDK - LIDAR communication library
-  dep_build(ydlidar_sdk CMAKE
-    SOURCE_DIR "deps/ydlidar_sdk"
-    CMAKE_ARGS ${extra_cmake_args}
+  # Apply Android logging patch before build
+  set(ydlidar_cmake_with_env "${CMAKE_COMMAND}" -E
+    env
+    "PYTHONPATH=${CMAKE_CURRENT_BINARY_DIR}/deps/_python_"
+    "AMENT_PREFIX_PATH=${CMAKE_CURRENT_BINARY_DIR}/deps"
+    "${CMAKE_COMMAND}")
+
+  ExternalProject_Add(deps-ydlidar_sdk
+    DOWNLOAD_COMMAND ""
+    PATCH_COMMAND patch -p1 < ${CMAKE_CURRENT_SOURCE_DIR}/android_patches/ydlidar_sdk_android_logging.patch || true
+    CMAKE_COMMAND ${ydlidar_cmake_with_env}
+    BUILD_COMMAND ${ydlidar_cmake_with_env} --build .
+    SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/deps/ydlidar_sdk"
+    CMAKE_ARGS
+      "-DCMAKE_FIND_ROOT_PATH=${CMAKE_CURRENT_BINARY_DIR}/deps"
+      "-DCMAKE_INSTALL_PREFIX=${CMAKE_CURRENT_BINARY_DIR}/deps"
+      -DBUILD_TESTING=OFF
+      ${extra_cmake_args}
       -DBUILD_SHARED_LIBS=OFF
       -DBUILD_EXAMPLES=OFF
       -DBUILD_CSHARP=OFF
       -DBUILD_TEST=OFF
-      -DCMAKE_CXX_FLAGS="-Wno-format-security")
+      -DCMAKE_CXX_FLAGS="-Wno-format-security"
+      "-DLINK_LIBS=log")
 
   dep_build(ament_index_python PIP
     SOURCE_DIR "deps/ament_index/ament_index_python"
@@ -430,11 +446,5 @@ macro(build_crosscompile_dependencies)
   dep_build(visualization_msgs CMAKE
     SOURCE_DIR "deps/common_interfaces/visualization_msgs"
     DEPENDENCIES rosidl_runtime_cpp rosidl_typesupport_interface geometry_msgs ament_cmake_export_include_directories ament_cmake_export_link_flags ament_cmake_include_directories ament_cmake_export_interfaces std_msgs ament_cmake_export_libraries sensor_msgs ament_cmake_core rosidl_typesupport_introspection_cpp ament_cmake_version ament_cmake_python ament_cmake_test rcutils rosidl_runtime_c ament_cmake_export_dependencies ament_cmake_target_dependencies ament_cmake_gen_version_h builtin_interfaces ament_cmake ament_cmake_export_definitions rosidl_typesupport_c rosidl_cmake rosidl_typesupport_introspection_c rosidl_generator_cpp ament_cmake_export_targets rosidl_typesupport_cpp rcpputils rosidl_generator_c rosidl_default_generators ament_package
-    CMAKE_ARGS ${extra_cmake_args})
-
-  # YDLidar ROS2 Driver - LIDAR ROS2 node
-  dep_build(ydlidar_ros2_driver CMAKE
-    SOURCE_DIR "deps/ydlidar_ros2_driver"
-    DEPENDENCIES ament_cmake rclcpp sensor_msgs visualization_msgs geometry_msgs std_srvs ydlidar_sdk
     CMAKE_ARGS ${extra_cmake_args})
 endmacro()
