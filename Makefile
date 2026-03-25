@@ -47,8 +47,6 @@ $(DEPS_STAMP): ros.repos
 	git submodule update
 	@echo "==> Fetching ROS 2 dependencies via vcs..."
 	vcs import --input ros.repos $(DEPS_DIR)/
-	@echo "==> Applying Android patches..."
-	./apply_android_patches.sh
 	@touch $(DEPS_STAMP)
 	@echo "==> Dependencies fetched"
 

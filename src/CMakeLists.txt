@@ -72,6 +72,7 @@ add_library(android-ros SHARED
 
   # LIDAR device implementation
   lidar/impl/ydlidar_device.cc
+  lidar/tty_device_detector.cc
 
   # LIDAR controller
   lidar/controllers/lidar_controller.cc

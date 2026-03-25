@@ -1,5 +1,6 @@
 #include <jni.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <fstream>
 #include <memory>
@@ -22,7 +23,9 @@
 #include "jni/jvm.h"
 #include "lidar/controllers/lidar_controller.h"
 #include "lidar/impl/ydlidar_device.h"
+#include "lidar/tty_device_detector.h"
 #include "ros/ros_interface.h"
+#include <core/serial/serial.h>
 #include "sensors/base/sensor_data_provider.h"
 #include "sensors/controllers/gps_location_sensor_controller.h"
 #include "sensors/impl/gps_location_sensor.h"
@@ -44,6 +47,29 @@ static jmethodID g_sensor_data_callback_method = nullptr;
 static std::mutex g_camera_frame_callback_mutex;
 static jobject g_camera_frame_callback_object = nullptr;
 static jmethodID g_camera_frame_callback_method = nullptr;
+
+// USB Serial JNI bridge state (used by android_jni_serial.cpp)
+namespace ydlidar {
+namespace core {
+namespace serial {
+JavaVM* g_javaVM = nullptr;
+jclass g_usbSerialBridgeClass = nullptr;
+jclass g_bufferedSerialClass = nullptr;
+jmethodID g_openDeviceMethod = nullptr;
+jmethodID g_closeDeviceMethod = nullptr;
+jmethodID g_availableMethod = nullptr;
+jmethodID g_readMethod = nullptr;
+jmethodID g_writeMethod = nullptr;
+jmethodID g_flushMethod = nullptr;
+// list_ports function stub (Android uses UsbSerialManager instead)
+std::vector<PortInfo> list_ports() {
+  // Return empty - USB device discovery handled by UsbSerialManager in Java
+  return std::vector<PortInfo>();
+}
+
+}  // namespace serial
+}  // namespace core
+}  // namespace ydlidar
 
 class AndroidApp
 {
@@ -373,9 +399,9 @@ public:
 
   // LIDAR device management
 
-  bool ConnectLidar(const std::string& device_path, const std::string& unique_id, jobject usb_manager)
+  bool ConnectLidar(const std::string& tty_path, const std::string& unique_id)
   {
-    LOGI("ConnectLidar: path=%s, id=%s", device_path.c_str(), unique_id.c_str());
+    LOGI("ConnectLidar: tty=%s, id=%s", tty_path.c_str(), unique_id.c_str());
 
     // Check if already connected
     for (const auto& controller : lidar_controllers_)
@@ -387,8 +413,8 @@ public:
       }
     }
 
-    // Create YDLidar device with USB manager for PTY bridge
-    auto device = std::make_unique<ros2_android::YDLidarDevice>(device_path, unique_id, usb_manager);
+    // Create YDLidar device with TTY path (rooted device approach)
+    auto device = std::make_unique<ros2_android::YDLidarDevice>(tty_path, unique_id);
 
     // Create controller (dereference optional ros_)
     auto controller = std::make_unique<ros2_android::LidarController>(std::move(device), *ros_);
@@ -497,6 +523,7 @@ extern "C"
   JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void * /*reserved*/)
   {
     g_jvm = vm;
+    ydlidar::core::serial::g_javaVM = vm;  // For USB Serial JNI bridge
     ros2_android::SetJavaVM(vm);
     return JNI_VERSION_1_6;
   }
@@ -991,17 +1018,17 @@ extern "C"
   // LIDAR device management
   JNIEXPORT jboolean JNICALL
   Java_com_github_mowerick_ros2_android_NativeBridge_nativeConnectLidar(
-      JNIEnv *env, jobject /*thiz*/, jstring device_path, jstring unique_id, jobject usb_manager)
+      JNIEnv *env, jobject /*thiz*/, jstring tty_path, jstring unique_id)
   {
     if (!g_app)
       return JNI_FALSE;
 
-    const char *path = env->GetStringUTFChars(device_path, nullptr);
+    const char *path = env->GetStringUTFChars(tty_path, nullptr);
     const char *id = env->GetStringUTFChars(unique_id, nullptr);
 
-    bool success = g_app->ConnectLidar(std::string(path), std::string(id), usb_manager);
+    bool success = g_app->ConnectLidar(std::string(path), std::string(id));
 
-    env->ReleaseStringUTFChars(device_path, path);
+    env->ReleaseStringUTFChars(tty_path, path);
     env->ReleaseStringUTFChars(unique_id, id);
 
     return success ? JNI_TRUE : JNI_FALSE;
@@ -1079,59 +1106,146 @@ extern "C"
     return success ? JNI_TRUE : JNI_FALSE;
   }
 
-  // PTY Bridge: LIDAR → SDK data path
-  JNIEXPORT void JNICALL
-  Java_com_github_mowerick_ros2_android_UsbDeviceManager_nativeWriteToPtyMaster(
-      JNIEnv *env, jobject /*thiz*/, jstring unique_id, jbyteArray data)
+  // TTY device detection (rooted device approach)
+  JNIEXPORT jobjectArray JNICALL
+  Java_com_github_mowerick_ros2_android_NativeBridge_nativeDetectTtyDevices(
+      JNIEnv *env, jclass /*clazz*/)
   {
-    if (!g_app)
-      return;
+    // Detect YDLIDAR TTY devices
+    std::vector<ros2_android::TtyDevice> devices = ros2_android::DetectYDLidarDevices();
 
-    const char *id = env->GetStringUTFChars(unique_id, nullptr);
-    std::string device_id(id);
-    env->ReleaseStringUTFChars(unique_id, id);
-
-    // Find the YDLidarDevice instance
-    ros2_android::YDLidarDevice* device = nullptr;
-    for (auto& controller : g_app->lidar_controllers_)
+    // Convert to ExternalDeviceInfoData for JNI serialization
+    std::vector<ros2_android::jni::ExternalDeviceInfoData> device_data;
+    for (const auto &device : devices)
     {
-      if (controller->GetUniqueId() == device_id)
+      ros2_android::jni::ExternalDeviceInfoData data;
+
+      // Generate unique ID from TTY path
+      std::string unique_id = "ydlidar_" + device.path;
+      std::replace(unique_id.begin(), unique_id.end(), '/', '_');
+
+      data.uniqueId = unique_id;
+
+      // Determine device name based on VID/PID
+      if (device.vendor_id == 0x10c4 && device.product_id == 0xea60)
       {
-        device = dynamic_cast<ros2_android::YDLidarDevice*>(controller->GetDevice());
-        break;
+        data.name = "YDLIDAR (CP210x)";
       }
+      else if (device.vendor_id == 0x1a86 && device.product_id == 0x7523)
+      {
+        data.name = "YDLIDAR (CH340)";
+      }
+      else
+      {
+        data.name = "YDLIDAR";
+      }
+
+      data.deviceType = "LIDAR";
+      data.usbPath = device.path;  // TTY path (e.g., "/dev/ttyUSB0")
+      data.vendorId = device.vendor_id;
+      data.productId = device.product_id;
+      data.topicName = "/scan";
+      data.topicType = "sensor_msgs/msg/LaserScan";
+      data.connected = false;  // Not connected yet
+      data.enabled = false;
+
+      device_data.push_back(data);
     }
 
-    if (!device)
+    return ros2_android::jni::CreateExternalDeviceInfoArray(env, device_data);
+  }
+
+  // Test TTY device accessibility (for diagnostics)
+  JNIEXPORT jboolean JNICALL
+  Java_com_github_mowerick_ros2_android_NativeBridge_nativeCanAccessTty(
+      JNIEnv *env, jclass /*clazz*/, jstring tty_path)
+  {
+    const char *path = env->GetStringUTFChars(tty_path, nullptr);
+    bool accessible = ros2_android::CanAccessTtyDevice(std::string(path));
+    env->ReleaseStringUTFChars(tty_path, path);
+
+    return accessible ? JNI_TRUE : JNI_FALSE;
+  }
+
+  // Initialize USB Serial JNI bridge (cache Java class and method IDs)
+  JNIEXPORT void JNICALL
+  Java_com_github_mowerick_ros2_android_UsbSerialBridge_nativeInitJNI(
+      JNIEnv *env, jclass /*clazz*/)
+  {
+    using namespace ydlidar::core::serial;
+    LOGI("Initializing USB Serial JNI bridge");
+
+    // Find UsbSerialBridge class
+    jclass localBridgeClass = env->FindClass("com/github/mowerick/ros2/android/UsbSerialBridge");
+    if (localBridgeClass == nullptr)
     {
-      LOGE("LIDAR device not found for PTY write: %s", device_id.c_str());
+      LOGE("Failed to find UsbSerialBridge class");
+      return;
+    }
+    g_usbSerialBridgeClass = reinterpret_cast<jclass>(env->NewGlobalRef(localBridgeClass));
+    env->DeleteLocalRef(localBridgeClass);
+
+    // Find BufferedUsbSerialPort class
+    jclass localPortClass = env->FindClass("com/github/mowerick/ros2/android/BufferedUsbSerialPort");
+    if (localPortClass == nullptr)
+    {
+      LOGE("Failed to find BufferedUsbSerialPort class");
+      return;
+    }
+    g_bufferedSerialClass = reinterpret_cast<jclass>(env->NewGlobalRef(localPortClass));
+    env->DeleteLocalRef(localPortClass);
+
+    // Cache method IDs for UsbSerialBridge
+    g_openDeviceMethod = env->GetStaticMethodID(
+        g_usbSerialBridgeClass,
+        "openDevice",
+        "(Ljava/lang/String;IIII)Lcom/github/mowerick/ros2/android/BufferedUsbSerialPort;");
+    if (g_openDeviceMethod == nullptr)
+    {
+      LOGE("Failed to find UsbSerialBridge.openDevice method");
       return;
     }
 
-    // Convert jbyteArray to C++ buffer
-    jsize len = env->GetArrayLength(data);
-    jbyte* bytes = env->GetByteArrayElements(data, nullptr);
-
-    // Write to PTY master with retry for partial writes
-    int pty_fd = device->GetPtyMasterFd();
-    ssize_t total_written = 0;
-    while (total_written < len)
+    g_closeDeviceMethod = env->GetStaticMethodID(
+        g_usbSerialBridgeClass,
+        "closeDevice",
+        "(Ljava/lang/String;)V");
+    if (g_closeDeviceMethod == nullptr)
     {
-      ssize_t written = write(pty_fd, bytes + total_written, len - total_written);
-      if (written < 0)
-      {
-        LOGE("PTY write error: %s", strerror(errno));
-        break;
-      }
-      total_written += written;
+      LOGE("Failed to find UsbSerialBridge.closeDevice method");
+      return;
     }
 
-    env->ReleaseByteArrayElements(data, bytes, JNI_ABORT);
-
-    if (total_written == len)
+    // Cache method IDs for BufferedUsbSerialPort
+    g_availableMethod = env->GetMethodID(g_bufferedSerialClass, "available", "()I");
+    if (g_availableMethod == nullptr)
     {
-      LOGI("Forwarded %d bytes from USB to PTY master", len);
+      LOGE("Failed to find BufferedUsbSerialPort.available method");
+      return;
     }
+
+    g_readMethod = env->GetMethodID(g_bufferedSerialClass, "read", "([BI)I");
+    if (g_readMethod == nullptr)
+    {
+      LOGE("Failed to find BufferedUsbSerialPort.read method");
+      return;
+    }
+
+    g_writeMethod = env->GetMethodID(g_bufferedSerialClass, "write", "([BI)V");
+    if (g_writeMethod == nullptr)
+    {
+      LOGE("Failed to find BufferedUsbSerialPort.write method");
+      return;
+    }
+
+    g_flushMethod = env->GetMethodID(g_bufferedSerialClass, "flush", "(ZZ)V");
+    if (g_flushMethod == nullptr)
+    {
+      LOGE("Failed to find BufferedUsbSerialPort.flush method");
+      return;
+    }
+
+    LOGI("USB Serial JNI bridge initialized successfully");
   }
 
 } // extern "C"

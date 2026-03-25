@@ -46,8 +46,12 @@ object NativeBridge {
         timestampNs: Long
     )
 
+    // TTY device detection (rooted device approach)
+    external fun nativeDetectTtyDevices(): Array<ExternalDeviceInfo>
+    external fun nativeCanAccessTty(ttyPath: String): Boolean
+
     // LIDAR device management
-    external fun nativeConnectLidar(devicePath: String, uniqueId: String, usbDeviceManager: UsbDeviceManager): Boolean
+    external fun nativeConnectLidar(ttyPath: String, uniqueId: String): Boolean
     external fun nativeDisconnectLidar(uniqueId: String): Boolean
     external fun nativeGetLidarList(): Array<ExternalDeviceInfo>
     external fun nativeEnableLidar(uniqueId: String): Boolean

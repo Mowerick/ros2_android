@@ -1,64 +1,23 @@
 #include "lidar/impl/ydlidar_device.h"
 
-#include <unistd.h>
 #include <chrono>
 #include <cmath>
-#include <errno.h>
-#include <fcntl.h>
-#include <termios.h>
-#include <sys/stat.h>
 
 #include "core/log.h"
 #include "core/notification_queue.h"
-#include "jni/jvm.h"
 #include "src/CYdLidar.h"
 
 namespace ros2_android
 {
 
-  YDLidarDevice::YDLidarDevice(const std::string &device_path, const std::string &unique_id, jobject usb_manager)
-      : device_path_(device_path),
+  YDLidarDevice::YDLidarDevice(const std::string &tty_path, const std::string &unique_id)
+      : tty_path_(tty_path),
         unique_id_(unique_id),
         is_scanning_(false),
         shutdown_(false),
-        pty_master_fd_(-1),
-        pty_slave_path_(""),
-        usb_manager_ref_(nullptr),
-        write_to_usb_method_(nullptr),
         lidar_(std::make_unique<CYdLidar>())
   {
-    LOGI("LIDAR device created: id=%s", unique_id_.c_str());
-
-    // Get JNI environment and create global reference to UsbDeviceManager
-    JNIEnv *env = ros2_android::GetJNIEnv();
-    if (!env)
-    {
-      LOGE("Failed to get JNI environment in YDLidarDevice constructor");
-      return;
-    }
-
-    // Create global reference (will persist across JNI calls)
-    usb_manager_ref_ = env->NewGlobalRef(usb_manager);
-    if (!usb_manager_ref_)
-    {
-      LOGE("Failed to create global reference to UsbDeviceManager");
-      return;
-    }
-
-    // Cache the writeToPhysicalUsb method ID
-    jclass usb_manager_class = env->GetObjectClass(usb_manager);
-    write_to_usb_method_ = env->GetMethodID(usb_manager_class, "writeToPhysicalUsb", "([B)V");
-    env->DeleteLocalRef(usb_manager_class);
-
-    if (!write_to_usb_method_)
-    {
-      LOGE("Failed to find writeToPhysicalUsb method");
-      env->DeleteGlobalRef(usb_manager_ref_);
-      usb_manager_ref_ = nullptr;
-      return;
-    }
-
-    LOGI("JNI references cached successfully");
+    LOGI("LIDAR device created: id=%s, tty=%s", unique_id_.c_str(), tty_path_.c_str());
   }
 
   YDLidarDevice::~YDLidarDevice()
@@ -68,70 +27,9 @@ namespace ros2_android
 
   bool YDLidarDevice::Initialize()
   {
-    LOGI("Initializing LIDAR: %s", unique_id_.c_str());
+    LOGI("Initializing LIDAR: %s at %s", unique_id_.c_str(), tty_path_.c_str());
 
-    // Create PTY pair
-    pty_master_fd_ = posix_openpt(O_RDWR | O_NOCTTY);
-    if (pty_master_fd_ < 0)
-    {
-      LOGE("Failed to create PTY: %s", strerror(errno));
-      PostNotification(NotificationSeverity::ERROR, "Failed to create PTY");
-      return false;
-    }
-
-    if (grantpt(pty_master_fd_) != 0 || unlockpt(pty_master_fd_) != 0)
-    {
-      LOGE("Failed to setup PTY: %s", strerror(errno));
-      close(pty_master_fd_);
-      pty_master_fd_ = -1;
-      PostNotification(NotificationSeverity::ERROR, "Failed to setup PTY");
-      return false;
-    }
-
-    char *slave_name = ptsname(pty_master_fd_);
-    if (!slave_name)
-    {
-      LOGE("Failed to get PTY slave name: %s", strerror(errno));
-      close(pty_master_fd_);
-      pty_master_fd_ = -1;
-      PostNotification(NotificationSeverity::ERROR, "Failed to get PTY slave name");
-      return false;
-    }
-    pty_slave_path_ = slave_name;
-
-    // CRITICAL: Set PTY master to raw mode BEFORE SDK tries to use slave
-    struct termios tios;
-    if (tcgetattr(pty_master_fd_, &tios) == 0)
-    {
-      cfmakeraw(&tios); // Disable echo, canonical mode, signals
-      tcsetattr(pty_master_fd_, TCSANOW, &tios);
-      LOGI("PTY master set to raw mode");
-    }
-    else
-    {
-      LOGW("Failed to set PTY master to raw mode: %s", strerror(errno));
-    }
-
-    // Also set the slave to raw mode
-    int slave_fd = open(pty_slave_path_.c_str(), O_RDWR | O_NOCTTY);
-    if (slave_fd >= 0)
-    {
-      if (tcgetattr(slave_fd, &tios) == 0)
-      {
-        cfmakeraw(&tios);
-        tcsetattr(slave_fd, TCSANOW, &tios);
-        LOGI("PTY slave also set to raw mode");
-      }
-      close(slave_fd);
-    }
-    else
-    {
-      LOGW("Could not open PTY slave to set raw mode: %s", strerror(errno));
-    }
-
-    LOGI("PTY created: master_fd=%d, slave=%s", pty_master_fd_, pty_slave_path_.c_str());
-
-    // Set lidar type (TYPE_TOF for TG series)
+    // Set lidar type (TYPE_TOF for TG series - SDK will auto-detect actual model)
     int lidar_type = TYPE_TOF;
     lidar_->setlidaropt(LidarPropLidarType, &lidar_type, sizeof(int));
 
@@ -139,11 +37,16 @@ namespace ros2_android
     int device_type = YDLIDAR_TYPE_SERIAL;
     lidar_->setlidaropt(LidarPropDeviceType, &device_type, sizeof(int));
 
-    // Enable SDK debug logging (using direct method call, not property)
+    // Set TTY serial port path
+    std::string port_path = tty_path_;
+    lidar_->setlidaropt(LidarPropSerialPort, port_path.c_str(), port_path.size());
+
+    // Enable SDK debug logging
     lidar_->setEnableDebug(true);
 
-    // Set common parameters with reasonable defaults
-    int baudrate = 230400; // Common default for most YDLIDARs
+    // Set baudrate for TG15 (512000 as detected from PC test)
+    int baudrate = 512000;
+    LOGI("Setting LIDAR baudrate to %d", baudrate);
     lidar_->setlidaropt(LidarPropSerialBaudrate, &baudrate, sizeof(int));
 
     // Sample rate (20 for TOF bidirectional communication)
@@ -154,15 +57,15 @@ namespace ros2_android
     int abnormal_check = 4;
     lidar_->setlidaropt(LidarPropAbnormalCheckCount, &abnormal_check, sizeof(int));
 
-    // Bidirectional communication (not single channel)
-    bool single_channel = false;
+    // Single channel mode for TG-series TOF LIDARs (no response headers expected)
+    bool single_channel = true;
     lidar_->setlidaropt(LidarPropSingleChannel, &single_channel, sizeof(bool));
 
     // Enable auto-reconnect
     bool auto_reconnect = true;
     lidar_->setlidaropt(LidarPropAutoReconnect, &auto_reconnect, sizeof(bool));
 
-    // Motor DTR control
+    // Motor DTR control (disabled for TG series)
     bool motor_dtr = false;
     lidar_->setlidaropt(LidarPropSupportMotorDtrCtrl, &motor_dtr, sizeof(bool));
 
@@ -186,41 +89,20 @@ namespace ros2_android
     bool intensity = false;
     lidar_->setlidaropt(LidarPropIntenstiy, &intensity, sizeof(bool));
 
-    // Configure SDK with PTY slave path
-    lidar_->setlidaropt(LidarPropSerialPort, pty_slave_path_.c_str(), pty_slave_path_.size());
-
-    // CRITICAL: Start PTY read thread BEFORE initializing SDK
-    // SDK initialize() may send commands immediately to query device info
-    LOGI("Starting PTY bridge thread before SDK initialization");
-    pty_read_thread_ = std::thread(&YDLidarDevice::PtyReadThread, this);
-
-    // Small delay to ensure PTY thread is ready
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-
-    // Initialize SDK (will open PTY slave and may communicate with device)
-    LOGI("Initializing YDLIDAR SDK on PTY slave: %s", pty_slave_path_.c_str());
+    // Initialize SDK with standard serial port path
+    LOGI("Initializing YDLIDAR SDK with TTY path: %s", tty_path_.c_str());
     bool init_result = lidar_->initialize();
 
     if (!init_result)
     {
       const char *error = lidar_->DescribeError();
-      LOGE("YDLidar SDK initialize failed: %s", error ? error : "unknown error");
-      PostNotification(NotificationSeverity::ERROR, std::string("LIDAR SDK init failed: ") + (error ? error : "unknown"));
-
-      // Clean up PTY thread
-      shutdown_ = true;
-      if (pty_read_thread_.joinable())
-      {
-        pty_read_thread_.join();
-      }
-
-      close(pty_master_fd_);
-      pty_master_fd_ = -1;
+      LOGE("YDLIDAR SDK initialization failed: %s", error ? error : "unknown error");
+      PostNotification(NotificationSeverity::ERROR, std::string("LIDAR init failed: ") + (error ? error : "unknown"));
       return false;
     }
 
-    LOGI("LIDAR SDK initialized successfully on PTY slave");
-    PostNotification(NotificationSeverity::WARNING, "LIDAR PTY bridge initialized");
+    LOGI("LIDAR SDK initialized successfully");
+    PostNotification(NotificationSeverity::WARNING, "LIDAR initialized");
     return true;
   }
 
@@ -241,37 +123,16 @@ namespace ros2_android
       StopScanning();
     }
 
-    // Wait for both threads to finish
+    // Wait for read thread to finish
     if (read_thread_.joinable())
     {
       read_thread_.join();
     }
-    if (pty_read_thread_.joinable())
-    {
-      pty_read_thread_.join();
-    }
 
-    // Disconnect SDK
+    // Disconnect SDK (closes TTY device automatically)
     if (lidar_)
     {
       lidar_->disconnecting();
-    }
-
-    // Close PTY master
-    if (pty_master_fd_ >= 0)
-    {
-      close(pty_master_fd_);
-      pty_master_fd_ = -1;
-      LOGI("PTY master closed");
-    }
-
-    // Release JNI global references
-    JNIEnv *env = ros2_android::GetJNIEnv();
-    if (env && usb_manager_ref_)
-    {
-      env->DeleteGlobalRef(usb_manager_ref_);
-      usb_manager_ref_ = nullptr;
-      LOGI("JNI global references released");
     }
 
     LOGI("LIDAR device shut down: %s", unique_id_.c_str());
@@ -298,10 +159,9 @@ namespace ros2_android
 
     is_scanning_ = true;
     read_thread_ = std::thread(&YDLidarDevice::ReadThread, this);
-    // Note: pty_read_thread_ already started in Initialize()
 
     PostNotification(NotificationSeverity::WARNING, "LIDAR scanning started");
-    LOGI("LIDAR scanning started with PTY bridge: %s", unique_id_.c_str());
+    LOGI("LIDAR scanning started: %s", unique_id_.c_str());
     return true;
   }
 
@@ -380,75 +240,5 @@ namespace ros2_android
     LOGI("LIDAR read thread stopped: %s", unique_id_.c_str());
   }
 
-  void YDLidarDevice::PtyReadThread()
-  {
-    LOGI("PTY read thread started for SDK commands: %s", unique_id_.c_str());
-
-    // Get JNI environment for this thread
-    JNIEnv *env = ros2_android::GetJNIEnv();
-    if (!env)
-    {
-      LOGE("Failed to attach JNI environment to PTY read thread");
-      return;
-    }
-
-    struct pollfd pfd = {pty_master_fd_, POLLIN, 0};
-    uint8_t buffer[256];
-
-    int poll_count = 0;
-    while (!shutdown_)
-    {
-      // Poll with 100ms timeout for clean shutdown
-      int ret = poll(&pfd, 1, 100);
-      poll_count++;
-
-      if (ret < 0)
-      {
-        LOGE("poll() error on PTY master: %s", strerror(errno));
-        break;
-      }
-
-      if (ret > 0 && (pfd.revents & POLLIN))
-      {
-        // Data available from SDK (command to LIDAR)
-        ssize_t bytes_read = read(pty_master_fd_, buffer, sizeof(buffer));
-
-        if (bytes_read > 0)
-        {
-          // Convert to jbyteArray
-          jbyteArray jdata = env->NewByteArray(bytes_read);
-          if (!jdata)
-          {
-            LOGE("Failed to allocate jbyteArray");
-            continue;
-          }
-
-          env->SetByteArrayRegion(jdata, 0, bytes_read, reinterpret_cast<jbyte *>(buffer));
-
-          // Call Kotlin writeToPhysicalUsb()
-          env->CallVoidMethod(usb_manager_ref_, write_to_usb_method_, jdata);
-
-          env->DeleteLocalRef(jdata);
-
-          // Check for JNI exceptions
-          if (env->ExceptionCheck())
-          {
-            env->ExceptionDescribe();
-            env->ExceptionClear();
-            LOGE("Exception calling writeToPhysicalUsb()");
-          }
-
-          LOGI("Forwarded %zd bytes from SDK to USB", bytes_read);
-        }
-        else if (bytes_read < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
-        {
-          LOGE("PTY read error: %s", strerror(errno));
-          break;
-        }
-      }
-    }
-
-    LOGI("PTY read thread stopped after %d polls: %s", poll_count, unique_id_.c_str());
-  }
 
 } // namespace ros2_android

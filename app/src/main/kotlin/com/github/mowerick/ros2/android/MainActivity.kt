@@ -107,6 +107,10 @@ class MainActivity : ComponentActivity(), PermissionHandler, NetworkInterfacePro
         super.onCreate(savedInstanceState)
 
         NativeBridge.nativeInit(cacheDir.absolutePath, packageName)
+
+        // Initialize USB Serial JNI bridge (must be called after nativeInit)
+        UsbSerialBridge.nativeInitJNI()
+
         NativeBridge.nativeSetNetworkInterfaces(queryNetworkInterfaces())
 
         // Request camera permission first, then location in the callback
@@ -226,6 +230,7 @@ class MainActivity : ComponentActivity(), PermissionHandler, NetworkInterfacePro
                     is Screen.ExternalSensors -> ExternalSensorsScreen(
                         devices = externalDevices,
                         onBack = { vm.navigateBack() },
+                        onScanDevices = { vm.scanForExternalDevices() },
                         onLidarClick = { vm.navigateToLidar(it) }
                     )
                     is Screen.LidarDetail -> {

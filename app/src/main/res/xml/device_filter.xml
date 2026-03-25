@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- CP2102 USB-to-Serial (most common in YDLIDAR) -->
+    <usb-device vendor-id="4292" product-id="60000" />
+    <!-- Hex: 0x10c4 = 4292, 0xea60 = 60000 -->
+
+    <!-- CH340 USB-to-Serial (alternative chip) -->
+    <usb-device vendor-id="6790" product-id="29987" />
+    <!-- Hex: 0x1a86 = 6790, 0x7523 = 29987 -->
+
+    <!-- CH341 USB-to-Serial (alternative chip) -->
+    <usb-device vendor-id="6790" product-id="21795" />
+    <!-- Hex: 0x1a86 = 6790, 0x5523 = 21795 -->
+</resources>

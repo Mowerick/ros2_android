@@ -9,7 +9,9 @@ import androidx.lifecycle.viewModelScope
 import com.github.mowerick.ros2.android.GpsManager
 import com.github.mowerick.ros2.android.MainActivity
 import com.github.mowerick.ros2.android.NativeBridge
-import com.github.mowerick.ros2.android.UsbDeviceManager
+import com.github.mowerick.ros2.android.RootPermissionManager
+import com.github.mowerick.ros2.android.UsbSerialManager
+import com.github.mowerick.ros2.android.UsbSerialBridge
 import com.github.mowerick.ros2.android.interfaces.NetworkInterfaceProvider
 import com.github.mowerick.ros2.android.interfaces.PermissionHandler
 import com.github.mowerick.ros2.android.model.CameraInfo
@@ -27,10 +29,12 @@ import com.github.mowerick.ros2.android.util.getDefaultDeviceId
 import com.github.mowerick.ros2.android.util.sanitizeDeviceId
 import com.jakewharton.processphoenix.ProcessPhoenix
 import java.net.NetworkInterface
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 sealed class Screen {
     data object Dashboard : Screen()
@@ -66,7 +70,7 @@ class RosViewModel(
 
     private var multicastLock: WifiManager.MulticastLock? = null
     private val gpsManager = GpsManager(applicationContext)
-    private val usbDeviceManager = UsbDeviceManager(applicationContext)
+    private val usbSerialManager = UsbSerialManager(applicationContext)
 
     private val _sensors = MutableStateFlow<List<SensorInfo>>(emptyList())
     val sensors: StateFlow<List<SensorInfo>> = _sensors
@@ -106,6 +110,9 @@ class RosViewModel(
     val isProbing: StateFlow<Boolean> = _isProbing
 
     init {
+        // Initialize USB Serial manager for LIDAR communication
+        UsbSerialBridge.setUsbSerialManager(usbSerialManager)
+
         // Register notification callback instead of polling
         NativeBridge.setNotificationCallback { severity, message ->
             viewModelScope.launch {
@@ -184,6 +191,9 @@ class RosViewModel(
                 refreshCurrentReading()
             }
         )
+
+        // USB Serial approach doesn't require root access
+        android.util.Log.i("RosViewModel", "USB Serial LIDAR support initialized (no root required)")
 
         // Register GPS enable callback from native - when sensor is enabled, ensure GPS is running
         NativeBridge.setGpsCallbacks(
@@ -351,7 +361,7 @@ class RosViewModel(
     override fun onCleared() {
         super.onCleared()
         releaseMulticastLock()
-        usbDeviceManager.destroy()
+        // UsbSerialManager doesn't need cleanup (no receiver to unregister)
     }
 
     // -- Dashboard navigation --
@@ -475,36 +485,29 @@ class RosViewModel(
     // -- External device control --
 
     fun connectLidar(uniqueId: String) {
-        // Find the UsbDevice from detected devices
-        val usbDevice = usbDeviceManager.detectLidarDevices().find {
-            usbDeviceManager.deviceToInfo(it).uniqueId == uniqueId
-        } ?: run {
-            addNotification("LIDAR device not found: $uniqueId", Severity.ERROR)
-            return
-        }
-
-        // Request permission if needed
-        usbDeviceManager.requestPermission(usbDevice) { granted ->
-            if (granted) {
-                // Open serial port with usb-serial-for-android
-                val serialSuccess = usbDeviceManager.openSerialPort(usbDevice, uniqueId)
-                if (!serialSuccess) {
-                    addNotification("Failed to open USB serial port", Severity.ERROR)
-                    return@requestPermission
+        viewModelScope.launch(Dispatchers.IO) {
+            // Find the USB Serial device from detected devices
+            val device = usbSerialManager.detectLidarDevices().find {
+                it.uniqueId == uniqueId
+            } ?: run {
+                withContext(Dispatchers.Main) {
+                    addNotification("LIDAR device not found: $uniqueId", Severity.ERROR)
                 }
+                return@launch
+            }
 
-                // Connect native LIDAR with PTY bridge
-                val path = usbDevice.deviceName
-                val success = NativeBridge.nativeConnectLidar(path, uniqueId, usbDeviceManager)
+            val devicePath = device.usbPath  // USB device path (e.g., "/dev/bus/usb/001/002")
+
+            // Connect via USB Serial (no root required)
+            // The native layer will call UsbSerialBridge.openDevice() via JNI
+            val success = NativeBridge.nativeConnectLidar(devicePath, uniqueId)
+            withContext(Dispatchers.Main) {
                 if (success) {
-                    addNotification("LIDAR connected with PTY bridge", Severity.WARNING)
+                    addNotification("LIDAR connected: ${device.name}", Severity.WARNING)
                     refreshExternalDevices()
                 } else {
-                    usbDeviceManager.closeSerialPort()
-                    addNotification("Failed to initialize LIDAR", Severity.ERROR)
+                    addNotification("Failed to initialize LIDAR SDK", Severity.ERROR)
                 }
-            } else {
-                addNotification("USB permission denied for LIDAR", Severity.ERROR)
             }
         }
     }
@@ -512,7 +515,6 @@ class RosViewModel(
     fun disconnectLidar(uniqueId: String) {
         val success = NativeBridge.nativeDisconnectLidar(uniqueId)
         if (success) {
-            usbDeviceManager.closeSerialPort()
             addNotification("LIDAR disconnected", Severity.WARNING)
             refreshExternalDevices()
         } else {
@@ -558,6 +560,38 @@ class RosViewModel(
         }
     }
 
+    /**
+     * Scan for external LIDAR devices (user-initiated)
+     *
+     * This method should be called when the user presses "Scan for Devices" button.
+     * It performs USB Serial device enumeration on a background thread and updates the UI.
+     */
+    fun scanForExternalDevices() {
+        viewModelScope.launch(Dispatchers.IO) {
+            android.util.Log.i("RosViewModel", "Scanning for USB Serial LIDAR devices...")
+
+            // Detect USB Serial LIDAR devices (CP210x/CH340)
+            val usbDevices = usbSerialManager.detectLidarDevices()
+
+            android.util.Log.i("RosViewModel", "Found ${usbDevices.size} USB LIDAR device(s)")
+
+            if (usbDevices.isEmpty()) {
+                withContext(Dispatchers.Main) {
+                    addNotification("No LIDAR devices found. Ensure device is connected via USB.", Severity.WARNING)
+                }
+            } else {
+                withContext(Dispatchers.Main) {
+                    addNotification("Found ${usbDevices.size} LIDAR device(s)", Severity.WARNING)
+                }
+            }
+
+            // Refresh device list
+            withContext(Dispatchers.Main) {
+                refreshExternalDevices()
+            }
+        }
+    }
+
     private fun refreshExternalDevices() {
         // Get connected devices from native layer (ground truth for connection state)
         val nativeDevices = try {
@@ -567,24 +601,23 @@ class RosViewModel(
             emptyList()
         }
 
-        // Detect USB LIDAR devices (potential devices that can be connected)
-        val usbDevices = usbDeviceManager.detectLidarDevices()
+        // Detect USB Serial LIDAR devices (potential devices that can be connected)
+        val usbDevices = usbSerialManager.detectLidarDevices()
+
+        android.util.Log.d("RosViewModel", "RefreshExternalDevices: ${usbDevices.size} USB devices, ${nativeDevices.size} connected devices")
 
         // Build list: prioritize native layer state, fall back to USB detection
         val deviceMap = mutableMapOf<String, ExternalDeviceInfo>()
 
         // First add all USB-detected devices (disconnected state)
         usbDevices.forEach { usbDevice ->
-            val info = usbDeviceManager.deviceToInfo(
-                device = usbDevice,
-                connected = false,
-                enabled = false
-            )
-            deviceMap[info.uniqueId] = info
+            android.util.Log.d("RosViewModel", "USB device: ${usbDevice.uniqueId} at ${usbDevice.usbPath}")
+            deviceMap[usbDevice.uniqueId] = usbDevice.copy(connected = false, enabled = false)
         }
 
         // Then override with native layer state (connected devices)
         nativeDevices.forEach { nativeDevice ->
+            android.util.Log.d("RosViewModel", "Connected device: ${nativeDevice.uniqueId}")
             deviceMap[nativeDevice.uniqueId] = nativeDevice
         }
 
