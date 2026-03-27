@@ -112,7 +112,7 @@ class MainActivity : ComponentActivity(), PermissionHandler, NetworkInterfacePro
 
         // Handle USB device attachment while app is running
         if (intent?.action == UsbManager.ACTION_USB_DEVICE_ATTACHED) {
-            val device: UsbDevice? = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
+            val device: UsbDevice? = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE, UsbDevice::class.java)
             android.util.Log.i("MainActivity", "USB device attached while app running: ${device?.deviceName}")
             device?.let {
                 currentViewModel?.handleUsbDeviceAttached(it)
@@ -160,7 +160,7 @@ class MainActivity : ComponentActivity(), PermissionHandler, NetworkInterfacePro
 
                     // Handle USB device if app was launched by USB intent
                     if (intent?.action == UsbManager.ACTION_USB_DEVICE_ATTACHED) {
-                        val device: UsbDevice? = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
+                        val device: UsbDevice? = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE, UsbDevice::class.java)
                         android.util.Log.i("MainActivity", "App launched by USB device: ${device?.deviceName}")
                         device?.let {
                             vm.handleUsbDeviceAttached(it)

@@ -44,8 +44,12 @@ namespace ros2_android
     std::string port_path = usb_path_;
     lidar_->setlidaropt(LidarPropSerialPort, port_path.c_str(), port_path.size());
 
-    // TODO: Remove debug logging before production or make it configurable via build flags
+    // Enable YDLIDAR SDK debug logging in Debug builds only
+#if ROS2_ANDROID_DEBUG
     lidar_->setEnableDebug(true);
+#else
+    lidar_->setEnableDebug(false);
+#endif
 
     // Set user-configured baudrate
     LOGI("Setting LIDAR baudrate to %d", baudrate_);
