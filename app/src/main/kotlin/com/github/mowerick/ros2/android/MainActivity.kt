@@ -268,7 +268,8 @@ class MainActivity : ComponentActivity(), PermissionHandler, NetworkInterfacePro
                                 onConnect = { vm.connectLidar(device.uniqueId) },
                                 onDisconnect = { vm.disconnectLidar(device.uniqueId) },
                                 onEnable = { vm.enableLidar(device.uniqueId) },
-                                onDisable = { vm.disableLidar(device.uniqueId) }
+                                onDisable = { vm.disableLidar(device.uniqueId) },
+                                onBaudrateChange = { baudrate -> vm.updateLidarBaudrate(device.uniqueId, baudrate) }
                             )
                         }
                     }

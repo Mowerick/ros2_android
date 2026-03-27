@@ -16,6 +16,7 @@ import com.github.mowerick.ros2.android.interfaces.NetworkInterfaceProvider
 import com.github.mowerick.ros2.android.interfaces.PermissionHandler
 import com.github.mowerick.ros2.android.model.CameraInfo
 import com.github.mowerick.ros2.android.model.ExternalDeviceInfo
+import com.github.mowerick.ros2.android.model.ExternalDeviceType
 import com.github.mowerick.ros2.android.model.NativeNotification
 import com.github.mowerick.ros2.android.model.NodeDependencyGraph
 import com.github.mowerick.ros2.android.model.NodeState
@@ -483,8 +484,22 @@ class RosViewModel(
 
     // -- External device control --
 
+    fun updateLidarBaudrate(uniqueId: String, baudrate: Int) {
+        _externalDevices.value = _externalDevices.value.map { device ->
+            if (device.uniqueId == uniqueId && device.deviceType == ExternalDeviceType.LIDAR) {
+                device.copy(baudrate = baudrate)
+            } else {
+                device
+            }
+        }
+    }
+
     fun connectLidar(uniqueId: String) {
         viewModelScope.launch(Dispatchers.IO) {
+            // Get current baudrate from state
+            val currentDevice = _externalDevices.value.find { it.uniqueId == uniqueId }
+            val baudrate = currentDevice?.baudrate ?: 512000
+
             // Find the USB Serial device from detected devices
             val device = usbSerialManager.detectLidarDevices().find {
                 it.uniqueId == uniqueId
@@ -499,7 +514,7 @@ class RosViewModel(
 
             // Connect via USB Serial (no root required)
             // The native layer will call UsbSerialBridge.openDevice() via JNI
-            val success = NativeBridge.nativeConnectLidar(devicePath, uniqueId)
+            val success = NativeBridge.nativeConnectLidar(devicePath, uniqueId, baudrate)
             withContext(Dispatchers.Main) {
                 if (success) {
                     addNotification("LIDAR connected: ${device.name}", Severity.WARNING)

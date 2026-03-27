@@ -10,14 +10,15 @@
 namespace ros2_android
 {
 
-  YDLidarDevice::YDLidarDevice(const std::string &tty_path, const std::string &unique_id)
+  YDLidarDevice::YDLidarDevice(const std::string &tty_path, const std::string &unique_id, int baudrate)
       : tty_path_(tty_path),
         unique_id_(unique_id),
+        baudrate_(baudrate),
         is_scanning_(false),
         shutdown_(false),
         lidar_(std::make_unique<CYdLidar>())
   {
-    LOGI("LIDAR device created: id=%s, tty=%s", unique_id_.c_str(), tty_path_.c_str());
+    LOGI("LIDAR device created: id=%s, tty=%s, baudrate=%d", unique_id_.c_str(), tty_path_.c_str(), baudrate_);
   }
 
   YDLidarDevice::~YDLidarDevice()
@@ -29,7 +30,9 @@ namespace ros2_android
   {
     LOGI("Initializing LIDAR: %s at %s", unique_id_.c_str(), tty_path_.c_str());
 
-    // Set lidar type (TYPE_TOF for TG series - SDK will auto-detect actual model)
+    // Set lidar type (TYPE_TOF for TG series)
+    // REQUIRED: Type must be set before connection to instantiate correct driver class
+    // SDK will auto-detect actual model (TG15/TG30/TG50) after connection
     int lidar_type = TYPE_TOF;
     lidar_->setlidaropt(LidarPropLidarType, &lidar_type, sizeof(int));
 
@@ -41,55 +44,18 @@ namespace ros2_android
     std::string port_path = tty_path_;
     lidar_->setlidaropt(LidarPropSerialPort, port_path.c_str(), port_path.size());
 
-    // Enable SDK debug logging
+    // TODO: Remove debug logging before production or make it configurable via build flags
     lidar_->setEnableDebug(true);
 
-    // Set baudrate for TG15 (512000 as detected from PC test)
-    int baudrate = 512000;
-    LOGI("Setting LIDAR baudrate to %d", baudrate);
-    lidar_->setlidaropt(LidarPropSerialBaudrate, &baudrate, sizeof(int));
+    // Set user-configured baudrate
+    LOGI("Setting LIDAR baudrate to %d", baudrate_);
+    lidar_->setlidaropt(LidarPropSerialBaudrate, &baudrate_, sizeof(int));
 
-    // Sample rate (20 for TOF bidirectional communication)
-    int sample_rate = 20;
-    lidar_->setlidaropt(LidarPropSampleRate, &sample_rate, sizeof(int));
-
-    // Abnormal check count
-    int abnormal_check = 4;
-    lidar_->setlidaropt(LidarPropAbnormalCheckCount, &abnormal_check, sizeof(int));
-
-    // Single channel mode for TG-series TOF LIDARs (no response headers expected)
-    bool single_channel = true;
-    lidar_->setlidaropt(LidarPropSingleChannel, &single_channel, sizeof(bool));
-
-    // Enable auto-reconnect
-    bool auto_reconnect = true;
-    lidar_->setlidaropt(LidarPropAutoReconnect, &auto_reconnect, sizeof(bool));
-
-    // Motor DTR control (disabled for TG series)
+    // Motor DTR control (disabled for TG series - no motor)
     bool motor_dtr = false;
     lidar_->setlidaropt(LidarPropSupportMotorDtrCtrl, &motor_dtr, sizeof(bool));
 
-    // Set reasonable angle range (SDK may adjust based on model)
-    float min_angle = -180.0f;
-    float max_angle = 180.0f;
-    lidar_->setlidaropt(LidarPropMinAngle, &min_angle, sizeof(float));
-    lidar_->setlidaropt(LidarPropMaxAngle, &max_angle, sizeof(float));
-
-    // Set range limits for TOF (0.05-64m)
-    float min_range = 0.05f;
-    float max_range = 64.0f;
-    lidar_->setlidaropt(LidarPropMinRange, &min_range, sizeof(float));
-    lidar_->setlidaropt(LidarPropMaxRange, &max_range, sizeof(float));
-
-    // Set scan frequency (TOF default: 8Hz, range: 3-15.7Hz)
-    float scan_freq = 8.0f;
-    lidar_->setlidaropt(LidarPropScanFrequency, &scan_freq, sizeof(float));
-
-    // Disable intensity for TOF (not supported)
-    bool intensity = false;
-    lidar_->setlidaropt(LidarPropIntenstiy, &intensity, sizeof(bool));
-
-    // Initialize SDK with standard serial port path
+    // Initialize SDK (uses dual-channel by default, auto-detects model, configures sample rate/frequency)
     LOGI("Initializing YDLIDAR SDK with TTY path: %s", tty_path_.c_str());
     bool init_result = lidar_->initialize();
 
@@ -239,6 +205,5 @@ namespace ros2_android
 
     LOGI("LIDAR read thread stopped: %s", unique_id_.c_str());
   }
-
 
 } // namespace ros2_android

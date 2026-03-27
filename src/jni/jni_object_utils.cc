@@ -462,11 +462,11 @@ namespace ros2_android
                 return nullptr;
             }
 
-            // Get constructor
+            // Get constructor (with baudrate and availableBaudrates)
             jmethodID constructor = env->GetMethodID(
                 deviceInfoClass,
                 "<init>",
-                "(Ljava/lang/String;Ljava/lang/String;Lcom/github/mowerick/ros2/android/model/ExternalDeviceType;Ljava/lang/String;IILjava/lang/String;Ljava/lang/String;ZZ)V");
+                "(Ljava/lang/String;Ljava/lang/String;Lcom/github/mowerick/ros2/android/model/ExternalDeviceType;Ljava/lang/String;IILjava/lang/String;Ljava/lang/String;ZZILjava/util/List;)V");
 
             if (!constructor)
             {
@@ -484,6 +484,22 @@ namespace ros2_android
             jstring topicName = env->NewStringUTF(data.topicName.c_str());
             jstring topicType = env->NewStringUTF(data.topicType.c_str());
 
+            // Create availableBaudrates List<Int>
+            jclass arrayListClass = env->FindClass("java/util/ArrayList");
+            jmethodID arrayListConstructor = env->GetMethodID(arrayListClass, "<init>", "()V");
+            jmethodID arrayListAdd = env->GetMethodID(arrayListClass, "add", "(Ljava/lang/Object;)Z");
+            jobject baudratesList = env->NewObject(arrayListClass, arrayListConstructor);
+
+            jclass integerClass = env->FindClass("java/lang/Integer");
+            jmethodID integerValueOf = env->GetStaticMethodID(integerClass, "valueOf", "(I)Ljava/lang/Integer;");
+
+            for (int baudrate : data.availableBaudrates)
+            {
+                jobject integerObj = env->CallStaticObjectMethod(integerClass, integerValueOf, baudrate);
+                env->CallBooleanMethod(baudratesList, arrayListAdd, integerObj);
+                env->DeleteLocalRef(integerObj);
+            }
+
             // Create ExternalDeviceInfo object
             jobject deviceInfo = env->NewObject(
                 deviceInfoClass,
@@ -497,7 +513,14 @@ namespace ros2_android
                 topicName,
                 topicType,
                 static_cast<jboolean>(data.connected),
-                static_cast<jboolean>(data.enabled));
+                static_cast<jboolean>(data.enabled),
+                static_cast<jint>(data.baudrate),
+                baudratesList);
+
+            // Clean up baudrate list references
+            env->DeleteLocalRef(baudratesList);
+            env->DeleteLocalRef(integerClass);
+            env->DeleteLocalRef(arrayListClass);
 
             // Clean up local references
             env->DeleteLocalRef(uniqueId);

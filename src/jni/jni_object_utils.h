@@ -66,6 +66,8 @@ struct ExternalDeviceInfoData {
     std::string topicType;
     bool connected;
     bool enabled;
+    int baudrate = 512000;  // Serial baudrate (default: 512000 - highest)
+    std::vector<int> availableBaudrates = {115200, 230400, 460800, 512000};
 };
 
 // Create a SensorInfo Kotlin object from native data

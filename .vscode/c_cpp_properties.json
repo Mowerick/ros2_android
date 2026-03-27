@@ -1,0 +1,23 @@
+{
+    "configurations": [
+        {
+            "name": "Android-Cross-Nix",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${workspaceFolder}/ros2_android/**",
+                "/nix/store/pvwnx86hmbdl6yxiqdi8k0gi5kwrsnfm-androidsdk/libexec/android-sdk/ndk/25.1.8937393/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/c++/v1",
+                "/nix/store/pvwnx86hmbdl6yxiqdi8k0gi5kwrsnfm-androidsdk/libexec/android-sdk/ndk/25.1.8937393/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include",
+                "/nix/store/pvwnx86hmbdl6yxiqdi8k0gi5kwrsnfm-androidsdk/libexec/android-sdk/ndk/25.1.8937393/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android"
+            ],
+            "defines": [
+                "__ANDROID__",
+                "ANDROID"
+            ],
+            "compilerPath": "/nix/store/pvwnx86hmbdl6yxiqdi8k0gi5kwrsnfm-androidsdk/libexec/android-sdk/ndk/25.1.8937393/toolchains/llvm/prebuilt/linux-x86_64/bin/clang",
+            "cStandard": "c17",
+            "cppStandard": "gnu++17",
+            "intelliSenseMode": "linux-clang-arm64"
+        }
+    ],
+    "version": 4
+}

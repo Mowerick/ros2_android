@@ -46,7 +46,7 @@ object NativeBridge {
     )
 
     // LIDAR device management
-    external fun nativeConnectLidar(ttyPath: String, uniqueId: String): Boolean
+    external fun nativeConnectLidar(ttyPath: String, uniqueId: String, baudrate: Int): Boolean
     external fun nativeDisconnectLidar(uniqueId: String): Boolean
     external fun nativeGetLidarList(): Array<ExternalDeviceInfo>
     external fun nativeEnableLidar(uniqueId: String): Boolean

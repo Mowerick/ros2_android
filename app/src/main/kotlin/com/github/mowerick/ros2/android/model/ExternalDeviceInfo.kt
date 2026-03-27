@@ -10,7 +10,9 @@ data class ExternalDeviceInfo(
     val topicName: String,           // "/scan"
     val topicType: String,           // "sensor_msgs/msg/LaserScan"
     val connected: Boolean,
-    val enabled: Boolean
+    val enabled: Boolean,
+    val baudrate: Int = 512000,      // Serial baudrate (default: 512000 - highest)
+    val availableBaudrates: List<Int> = listOf(115200, 230400, 460800, 512000)
 )
 
 enum class ExternalDeviceType {

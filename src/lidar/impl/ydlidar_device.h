@@ -34,8 +34,9 @@ namespace ros2_android
      * Create YDLIDAR device with TTY path for rooted devices
      * @param tty_path TTY device path (e.g., "/dev/ttyUSB0")
      * @param unique_id Unique identifier for this device
+     * @param baudrate Serial baudrate (e.g., 115200, 230400, 460800, 512000)
      */
-    YDLidarDevice(const std::string &tty_path, const std::string &unique_id);
+    YDLidarDevice(const std::string &tty_path, const std::string &unique_id, int baudrate);
     virtual ~YDLidarDevice();
 
     // LidarDevice interface
@@ -60,6 +61,7 @@ namespace ros2_android
 
     std::string tty_path_;   // TTY device path (e.g., "/dev/ttyUSB0")
     std::string unique_id_;
+    int baudrate_;           // Serial baudrate
 
     std::atomic<bool> is_scanning_;
     std::atomic<bool> shutdown_;

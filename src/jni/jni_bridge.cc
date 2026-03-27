@@ -434,9 +434,9 @@ public:
 
   // LIDAR device management
 
-  bool ConnectLidar(const std::string& tty_path, const std::string& unique_id)
+  bool ConnectLidar(const std::string& tty_path, const std::string& unique_id, int baudrate)
   {
-    LOGI("ConnectLidar: tty=%s, id=%s", tty_path.c_str(), unique_id.c_str());
+    LOGI("ConnectLidar: tty=%s, id=%s, baudrate=%d", tty_path.c_str(), unique_id.c_str(), baudrate);
 
     // Check if already connected
     for (const auto& controller : lidar_controllers_)
@@ -448,8 +448,8 @@ public:
       }
     }
 
-    // Create YDLidar device with TTY path (rooted device approach)
-    auto device = std::make_unique<ros2_android::YDLidarDevice>(tty_path, unique_id);
+    // Create YDLidar device with TTY path and baudrate
+    auto device = std::make_unique<ros2_android::YDLidarDevice>(tty_path, unique_id, baudrate);
 
     // Create controller (dereference optional ros_)
     auto controller = std::make_unique<ros2_android::LidarController>(std::move(device), *ros_);
@@ -1060,7 +1060,7 @@ extern "C"
   // LIDAR device management
   JNIEXPORT jboolean JNICALL
   Java_com_github_mowerick_ros2_android_NativeBridge_nativeConnectLidar(
-      JNIEnv *env, jobject /*thiz*/, jstring tty_path, jstring unique_id)
+      JNIEnv *env, jobject /*thiz*/, jstring tty_path, jstring unique_id, jint baudrate)
   {
     if (!g_app)
       return JNI_FALSE;
@@ -1068,7 +1068,7 @@ extern "C"
     const char *path = env->GetStringUTFChars(tty_path, nullptr);
     const char *id = env->GetStringUTFChars(unique_id, nullptr);
 
-    bool success = g_app->ConnectLidar(std::string(path), std::string(id));
+    bool success = g_app->ConnectLidar(std::string(path), std::string(id), static_cast<int>(baudrate));
 
     env->ReleaseStringUTFChars(tty_path, path);
     env->ReleaseStringUTFChars(unique_id, id);
