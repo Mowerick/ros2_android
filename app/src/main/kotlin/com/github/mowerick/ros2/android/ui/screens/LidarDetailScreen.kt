@@ -70,14 +70,16 @@ fun LidarDetailScreen(
                     if (!device.connected) {
                         Button(
                             onClick = onConnect,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !isBeingToggled
                         ) {
                             Text("Connect")
                         }
                     } else {
                         OutlinedButton(
                             onClick = onDisconnect,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !isBeingToggled
                         ) {
                             Text("Disconnect")
                         }

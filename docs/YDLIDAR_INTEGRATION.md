@@ -873,10 +873,9 @@ class LidarController : public SensorDataProvider {
 };
 ```
 
-**Topic naming**: The controller creates the topic with device ID prefix:
+**Topic naming**: The controller uses standard ROS 2 LiDAR topic naming:
 ```cpp
-std::string topic = "/" + ros.GetDeviceId() + "/scan";  // e.g., "/phone123/scan"
-scan_pub_.SetTopic(topic.c_str());
+scan_pub_.SetTopic("/scan");  // Standard ROS 2 convention, no device ID prefix
 ```
 
 **QoS settings**: Uses BEST_EFFORT for real-time sensor streaming:
@@ -946,7 +945,7 @@ fun LidarDetailScreen(device: ExternalDeviceInfo, ...) {
         // Topic card (collapsible, only when connected)
         if (device.connected) {
             CollapsibleCard(title = "Topic") {
-                Text("Name: ${device.topicName}")  // e.g., "/phone123/scan"
+                Text("Name: ${device.topicName}")  // "/scan"
                 Text("Type: ${device.topicType}")  // sensor_msgs/msg/LaserScan
             }
         }
@@ -1000,7 +999,7 @@ class RosViewModel(...) : ViewModel() {
                 deviceMap[nativeDevice.uniqueId] = usbDevice.copy(
                     connected = nativeDevice.connected,
                     enabled = nativeDevice.enabled,
-                    topicName = nativeDevice.topicName,  // Includes device ID prefix
+                    topicName = nativeDevice.topicName,  // "/scan" (standard ROS 2 convention)
                     topicType = nativeDevice.topicType
                 )
             } else {
@@ -1015,7 +1014,7 @@ class RosViewModel(...) : ViewModel() {
 
 **Why merge two sources**:
 - USB detection: Provides vendor/product IDs, USB path, available (disconnected) devices
-- Native layer: Provides connection state, enabled state, correct topic name with device ID prefix
+- Native layer: Provides connection state, enabled state, actual topic name ("/scan")
 
 ### 3. External Declarations for JNI Globals
 

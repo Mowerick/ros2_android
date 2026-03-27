@@ -21,9 +21,8 @@ namespace ros2_android
 
     LOGI("LidarController created for device: %s", device_->GetUniqueId().c_str());
 
-    // Set topic with device ID prefix
-    std::string topic = "/" + ros.GetDeviceId() + "/scan";
-    scan_pub_.SetTopic(topic.c_str());
+    // Set topic to standard ROS 2 LiDAR convention (no device ID prefix)
+    scan_pub_.SetTopic("/scan");
 
     // Use BEST_EFFORT QoS for LaserScan (standard for sensor streaming)
     auto qos = rclcpp::QoS(rclcpp::KeepLast(1))

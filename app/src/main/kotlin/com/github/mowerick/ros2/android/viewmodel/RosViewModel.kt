@@ -531,11 +531,26 @@ class RosViewModel(
     }
 
     fun disconnectLidar(uniqueId: String) {
-        val success = NativeBridge.nativeDisconnectLidar(uniqueId)
-        if (success) {
-            refreshExternalDevices()
-        } else {
-            addNotification("Failed to disconnect LIDAR", Severity.ERROR)
+        // Prevent double-clicks
+        if (_devicesBeingToggled.value.contains(uniqueId)) {
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            _devicesBeingToggled.value = _devicesBeingToggled.value + uniqueId
+
+            val success = NativeBridge.nativeDisconnectLidar(uniqueId)
+
+            withContext(Dispatchers.Main) {
+                if (success) {
+                    android.util.Log.i("RosViewModel", "LIDAR disconnected: $uniqueId")
+                    refreshExternalDevices()
+                } else {
+                    addNotification("Failed to disconnect LIDAR", Severity.ERROR)
+                }
+
+                _devicesBeingToggled.value = _devicesBeingToggled.value - uniqueId
+            }
         }
     }
 
