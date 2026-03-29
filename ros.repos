@@ -119,5 +119,5 @@ repositories:
     version: humble
   ydlidar_sdk:
     type: git
-    url: git@github.com:Mowerick/YDLidar-SDK.git
-    version: master
+    url: git@github.com:ros2-bachelor-thesis/YDLidar-SDK.git
+    version: main
