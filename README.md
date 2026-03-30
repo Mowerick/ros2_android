@@ -214,6 +214,34 @@ git submodule init
 git submodule update
 ```
 
+### Model Assets Setup
+
+The object detection perception system requires NCNN model files that are not included in this repository (not yet open-sourced). You must manually provide the following model files in the `app/src/main/assets/models/` directory:
+
+**Required files:**
+
+- `yolov9_s_pobed.ncnn.param` (70 KB) - YOLOv9-s detection model parameters
+- `yolov9_s_pobed.ncnn.bin` (19 MB) - YOLOv9-s detection model weights
+- `mars-small128.ncnn.param` (9.2 KB) - MARS ReID model parameters for tracking
+- `mars-small128.ncnn.bin` (5.4 MB) - MARS ReID model weights for tracking
+
+**Model specifications:**
+
+- **Detection model**: YOLOv9-s trained on Colorado Potato Beetle dataset (3 classes: `cpb_beetle`, `cpb_larva`, `cpb_eggs`)
+- **Input size**: 1280×736 (letterbox resize with padding)
+- **ReID model**: MARS-small128 for Deep SORT multi-object tracking
+- **Feature dimension**: 128-D appearance features
+
+Create the directory and copy your model files:
+
+```bash
+mkdir -p app/src/main/assets/models
+cp /path/to/your/models/*.ncnn.{param,bin} app/src/main/assets/models/
+```
+
+> [!NOTE]
+> The perception pipeline subscribes to external ZED camera topics (`/zed/zed_node/rgb/image_rect_color/compressed`, `/zed/zed_node/depth/depth_registered`, `/zed/zed_node/point_cloud/cloud_registered`) and publishes 3D-localized detections. The ZED camera should be running on a separate machine on the same ROS 2 network.
+
 ### Download ROS Dependencies
 
 Fetch git submodules and ROS 2 source dependencies:

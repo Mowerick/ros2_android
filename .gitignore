@@ -11,3 +11,6 @@ app/build/
 *.iml
 
 __pycache__/
+
+# Model assets (not open-sourced yet)
+app/src/main/assets/
