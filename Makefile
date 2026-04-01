@@ -8,10 +8,20 @@ SHELL := bash
 BUILD_DIR := build
 DEPS_DIR := deps
 JNI_LIBS_DIR := $(BUILD_DIR)/jniLibs/arm64-v8a
-APK_OUTPUT := app/build/outputs/apk/debug/app-debug.apk
 
 # Build type: RelWithDebInfo (default), Debug, or Release
 BUILD_TYPE ?= RelWithDebInfo
+
+# APK build variant (debug/release)
+ifeq ($(BUILD_TYPE),Release)
+  GRADLE_TASK := assembleRelease
+  APK_VARIANT := release
+  APK_OUTPUT := app/build/outputs/apk/release/app-release.apk
+else
+  GRADLE_TASK := assembleDebug
+  APK_VARIANT := debug
+  APK_OUTPUT := app/build/outputs/apk/debug/app-debug.apk
+endif
 
 # Convenience aliases
 .PHONY: debug release
@@ -69,8 +79,8 @@ $(NATIVE_STAMP): $(DEPS_STAMP) CMakeLists.txt dependencies.cmake dep_build.cmake
 app: $(APK_STAMP)
 
 $(APK_STAMP): $(NATIVE_STAMP) $(shell find app/src -type f 2>/dev/null) app/build.gradle.kts
-	@echo "==> Building Android APK..."
-	./gradlew :app:assembleDebug
+	@echo "==> Building Android APK ($(APK_VARIANT))..."
+	./gradlew :app:$(GRADLE_TASK)
 	@touch $(APK_STAMP)
 	@echo "==> APK built: $(APK_OUTPUT)"
 

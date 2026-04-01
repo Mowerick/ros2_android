@@ -37,6 +37,13 @@ android {
             keyAlias = "adb_debug_key"
             keyPassword = "android"
         }
+        // TODO (ohagenauer) use real signing config for release
+        create("release") {
+            storeFile = file("${System.getProperty("user.home")}/.android/debug.keystore")
+            storePassword = "android"
+            keyAlias = "adb_debug_key"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {
@@ -48,6 +55,7 @@ android {
             isDebuggable = false
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 
