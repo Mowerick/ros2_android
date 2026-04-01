@@ -4,7 +4,6 @@ data class PipelineNode(
     val id: String,
     val name: String,
     val description: String,
-    val state: NodeState = NodeState.Stopped,
     val subscribesTo: List<TopicInfo> = emptyList(),
     val publishesTo: List<TopicInfo> = emptyList(),
     val upstreamNodeId: String? = null,

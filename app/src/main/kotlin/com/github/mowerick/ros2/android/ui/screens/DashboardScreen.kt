@@ -41,8 +41,7 @@ fun DashboardScreen(
     onSettingsClick: () -> Unit,
     onBuiltInSensorsClick: () -> Unit,
     onExternalSensorsClick: () -> Unit,
-    onSubsystemClick: () -> Unit,
-    onPerceptionClick: () -> Unit
+    onSubsystemClick: () -> Unit
 ) {
     val titleText = if (rosDomainId >= 0) "Dashboard (ID: $rosDomainId)" else "Dashboard (ID: --)"
 
@@ -124,20 +123,10 @@ fun DashboardScreen(
                 SectionCard(
                     icon = Icons.Filled.AccountTree,
                     title = "ROS 2 Subsystem",
-                    subtitle = if (rosStarted) "Perception & Positioning"
+                    subtitle = if (rosStarted) "Perception & Positioning Pipeline"
                                else "Start ROS to access subsystem",
                     enabled = rosStarted,
                     onClick = onSubsystemClick
-                )
-            }
-            item {
-                SectionCard(
-                    icon = Icons.Filled.RemoveRedEye,
-                    title = "Object Detection",
-                    subtitle = if (rosStarted) "YOLOv9 + Deep SORT"
-                               else "Start ROS to access perception",
-                    enabled = rosStarted,
-                    onClick = onPerceptionClick
                 )
             }
         }

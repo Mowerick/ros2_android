@@ -29,7 +29,9 @@ fun SubsystemScreen(
     onNodeStartStop: (String) -> Unit,
     isNodeStartable: (String) -> Boolean,
     isProbing: Boolean,
-    onToggleProbing: () -> Unit
+    onToggleProbing: () -> Unit,
+    isRunningLocally: (String) -> Boolean = { false },
+    isDetectedOnNetwork: (String) -> Boolean = { false }
 ) {
     Scaffold(
         topBar = {
@@ -57,7 +59,9 @@ fun SubsystemScreen(
                     onStartStop = { onNodeStartStop(node.id) },
                     onClick = { onNodeClick(node) },
                     onProbe = if (node.isExternal) onToggleProbing else null,
-                    isProbing = node.isExternal && isProbing
+                    isProbing = node.isExternal && isProbing,
+                    runningLocally = isRunningLocally(node.id),
+                    detectedOnNetwork = isDetectedOnNetwork(node.id)
                 )
 
                 if (index < nodes.lastIndex) {

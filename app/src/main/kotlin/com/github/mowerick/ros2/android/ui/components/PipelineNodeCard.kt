@@ -39,12 +39,17 @@ fun PipelineNodeCard(
     onStartStop: () -> Unit,
     onClick: () -> Unit,
     onProbe: (() -> Unit)? = null,
-    isProbing: Boolean = false
+    isProbing: Boolean = false,
+    runningLocally: Boolean = false,
+    detectedOnNetwork: Boolean = false
 ) {
+    val isDisabled = !canStart && !runningLocally && !detectedOnNetwork && !node.isExternal
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
+            .clickable(onClick = onClick)
+            .alpha(if (isDisabled) 0.5f else 1f),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         colors = if (node.isExternal) CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant
@@ -65,9 +70,21 @@ fun PipelineNodeCard(
                 Column(modifier = Modifier.weight(1f)) {
                     if (node.isExternal) {
                         Text(
-                            text = "External (Jetson/PC)",
+                            text = "External Hardware",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else if (runningLocally) {
+                        Text(
+                            text = "Running Locally",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    } else if (detectedOnNetwork) {
+                        Text(
+                            text = "Running on Network",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.tertiary
                         )
                     }
                     Text(
@@ -75,7 +92,8 @@ fun PipelineNodeCard(
                         style = MaterialTheme.typography.titleMedium
                     )
                 }
-                NodeStateChip(state = node.state)
+                val displayState = if (runningLocally || detectedOnNetwork) NodeState.Running else NodeState.Stopped
+                NodeStateChip(state = displayState)
             }
 
             // Pub/Sub labels
@@ -94,8 +112,9 @@ fun PipelineNodeCard(
                 )
             }
 
-            // External nodes: probe button. Internal nodes: start/stop button.
+            // Button logic based on node type and runtime state
             if (node.isExternal && onProbe != null) {
+                // External hardware: show probe button
                 OutlinedButton(onClick = onProbe) {
                     if (isProbing) {
                         val transition = rememberInfiniteTransition(label = "probe")
@@ -133,24 +152,38 @@ fun PipelineNodeCard(
                         )
                     }
                     Text(
-                        if (isProbing) "  Stop Probing" else "  Probe Topic",
+                        if (isProbing) "  Stop Probing" else "  Probe Topics",
                         style = MaterialTheme.typography.labelMedium
                     )
                 }
             } else if (!node.isExternal) {
-                if (node.state == NodeState.Running) {
-                    OutlinedButton(onClick = onStartStop) {
-                        Text("Stop")
-                    }
-                } else {
-                    Button(
-                        onClick = onStartStop,
-                        enabled = canStart
-                    ) {
+                // Internal node logic
+                when {
+                    detectedOnNetwork -> {
+                        // Running elsewhere - no button
                         Text(
-                            if (canStart) "Start"
-                            else "Waiting for upstream"
+                            text = "Running on another device",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.tertiary
                         )
+                    }
+                    runningLocally -> {
+                        // Running locally - show stop button
+                        OutlinedButton(onClick = onStartStop) {
+                            Text("Stop")
+                        }
+                    }
+                    else -> {
+                        // Not running - show start button (enabled/disabled based on upstream)
+                        Button(
+                            onClick = onStartStop,
+                            enabled = canStart
+                        ) {
+                            Text(
+                                if (canStart) "Start"
+                                else "Waiting for upstream"
+                            )
+                        }
                     }
                 }
             }

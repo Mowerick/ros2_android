@@ -2,7 +2,7 @@
 
 An Android app that deploys a ROS 2 Humble Perception & Positioning subsystem on ARM devices (arm64-v8a) using Eclipse Cyclone DDS. Built on top of [sloretz/sensors_for_ros](https://github.com/sloretz/sensors_for_ros) (Loretz, ROSCon 2022) - a CMake superbuild of ~70 ROS 2 Humble packages for Android - restructured from a pure C++ NativeActivity into a Java/Kotlin + Native hybrid with Jetpack Compose UI.
 
-Target: Android 13 (API 33), NDK 25.1.
+Target: Android 13 (API 33), NDK 26.3.
 
 ## Features
 
@@ -10,21 +10,23 @@ Target: Android 13 (API 33), NDK 25.1.
 
 - **Built-in sensor publishers** - accelerometer, barometer, gyroscope, illuminance, magnetometer, GPS location published as ROS 2 topics with frame IDs and timestamps
 - **Camera publisher** - front and rear device cameras published as `sensor_msgs/Image` (raw BGR8) and `sensor_msgs/CompressedImage` (JPEG)
+- **USB LiDAR** - YDLIDAR SDK integration via JNI fd handoff, published as `sensor_msgs/LaserScan`
+- **YOLOv9 object detection** - on-device inference via NCNN (YOLOv9-s + Deep SORT tracker) for Colorado Potato Beetle detection (beetle, larva, eggs) with 3D localization from ZED camera point clouds
+- **State machine pipeline** - sequential ROS 2 subsystem with dynamic node detection (local vs external execution), automatic dependency progression, and distributed deployment support
 - **Wi-Fi multicast / DDS discovery** - `MulticastLock` to enable DDS multicast on Android Wi-Fi
 - **DDS domain selection** - configurable `ROS_DOMAIN_ID` and network interface for DDS discovery
 - **Event-driven architecture** - JNI callbacks for sensor data and camera frames (zero polling overhead)
 - **Notification system** - user notification overlay for alerts and error messages from both native (C++) and Kotlin layers
-- **Jetpack Compose UI** - sensor list, live sensor data view, camera preview, node pipeline management
-- **Testing framework** - Python-based ROS 2 subscriber test suite with matplotlib visualizers for all sensor types (accelerometer, gyroscope, magnetometer, barometer, illuminance, GPS, camera)
+- **Jetpack Compose UI** - sensor list, live sensor data view, camera preview, pipeline node management with runtime state visualization
+- **Testing framework** - Python-based ROS 2 subscriber test suite with matplotlib visualizers for all sensor types
 
-### Planned
+### Planned (Not Yet Implemented)
 
-- **USB camera** - external USB cameras via libusb/libuvc with JNI file descriptor handoff, published as `sensor_msgs/Image`
-- **USB LiDAR** - YDLIDAR SDK integration via JNI fd handoff, published as `sensor_msgs/LaserScan`
 - **DDS-Security** - OpenSSL static linking (hidden visibility to avoid BoringSSL collision), Cyclone DDS security plugins, SROS2 credentials
-- **Subscriber and in-app visualization** - subscribe to `sensor_msgs/Image` topics and render in the Android UI (replacing rviz, which is infeasible due to Qt5/Ogre3D dependencies)
-- **YOLO object detection** - on-device inference via NCNN, subscribing to camera topics and publishing object detections
+- **USB camera** - external USB cameras via libusb/libuvc with JNI file descriptor handoff, published as `sensor_msgs/Image`
 - **micro-ROS Agent** - hosting the agent on Android to bridge ROS 2 DDS to microcontrollers via serial/USB
+- **Target manager** - CPB egg selection and IMU-based orientation calibration for laser positioning
+- **Arm commander** - pan/tilt arm control with ACK/NACK protocol and state machine management
 
 ## Architecture
 
@@ -113,6 +115,101 @@ The app publishes the following topics that can be discovered and consumed by ot
 
 All published messages include a `frame_id` field in the header (e.g., `"<device_id>_camera_front"`, `"<device_id>_imu_link"`) and a timestamp indicating when the data was captured. This allows other ROS 2 nodes to transform the data between coordinate frames and temporally synchronize multiple sensors using ROS 2's TF (Transform) system.
 
+## Perception & Positioning Subsystem
+
+The app includes a complete perception and positioning pipeline for Colorado Potato Beetle (CPB) detection and localization. The pipeline operates as a state machine with sequential dependency progression.
+
+### Pipeline Architecture
+
+```
+ZED Camera (External) → Object Detection (Android) → Target Manager → Arm Commander → micro-ROS Agent
+```
+
+**State Machine Flow:**
+
+```
+STOPPED → ZED_PROBING → ZED_AVAILABLE → DETECTION_RUNNING →
+TARGET_RUNNING → ARM_RUNNING → AGENT_RUNNING
+```
+
+### Object Detection Node
+
+**Input (subscribed topics from external ZED camera):**
+
+- `/zed/zed_node/rgb/image_rect_color/compressed` - JPEG compressed RGB image
+- `/zed/zed_node/depth/depth_registered` - Depth map aligned to RGB
+- `/zed/zed_node/point_cloud/cloud_registered` - 3D point cloud
+
+**Processing pipeline:**
+
+1. JPEG decompression via libjpeg-turbo (TurboJPEG)
+2. YOLOv9-s detection via NCNN (1280×736 letterbox input)
+3. Deep SORT multi-object tracking with MARS ReID features
+4. 3D localization by querying point cloud at detection center
+5. Point cloud cropping to detection bounding box
+
+**Output (published topics):**
+
+- `/<device_id>/cpb_beetle_center` - `geometry_msgs/Point` - 3D center location of beetle detections
+- `/<device_id>/cpb_beetle` - `sensor_msgs/PointCloud2` - Cropped point cloud for beetle
+- `/<device_id>/cpb_larva_center` - `geometry_msgs/Point` - 3D center location of larva detections
+- `/<device_id>/cpb_larva` - `sensor_msgs/PointCloud2` - Cropped point cloud for larva
+- `/<device_id>/cpb_eggs_center` - `geometry_msgs/Point` - 3D center location of egg detections
+- `/<device_id>/cpb_eggs` - `sensor_msgs/PointCloud2` - Cropped point cloud for eggs
+
+**Detection classes:**
+
+- `cpb_beetle` (class 0) - Adult Colorado Potato Beetle
+- `cpb_larva` (class 1) - CPB larvae
+- `cpb_eggs` (class 2) - CPB egg clusters
+
+**Performance:**
+
+- Model size: YOLOv9-s (~19 MB) + MARS-small128 (~5.4 MB)
+- Input resolution: 1280×736
+- Feature dimension: 128-D appearance features for tracking
+- Inference backend: NCNN (Tencent) optimized for ARM NEON
+
+### Dynamic Node Detection
+
+The pipeline supports distributed deployment across multiple Android devices or PCs. Nodes can run locally or be detected as running on other devices via topic probing.
+
+**Node states:**
+
+- **Stopped** - Node not running anywhere
+- **Running Locally** - Node executing on this Android device
+- **Running on Network** - Node detected on another device (topics discovered via DDS)
+- **External Hardware** - Node runs on dedicated hardware (e.g., ZED camera on Jetson)
+
+**User workflow:**
+
+1. Navigate to "ROS 2 Subsystem" from dashboard
+2. Probe topics → discovers ZED camera
+3. Start object detection locally → loads NCNN models, publishes detections
+4. Click object detection card → view live statistics (total detections, active tracks, queue size)
+5. Downstream nodes become startable as upstream dependencies are satisfied
+
+> [!TIP]
+> The object detection node can run on Phone A while target manager runs on Phone B. Topic discovery automatically detects which nodes are running where and enables/disables start buttons accordingly.
+
+### Technical Implementation Notes
+
+**OpenCV dependency isolation:**
+
+- OpenCV (opencv-mobile) is **only** linked in the perception library (`libros2_android_perception.so`)
+- The main app (`libandroid-ros.so`) uses libjpeg-turbo for JPEG decompression instead of `cv::imdecode()`
+- Simple `Point3f` and `Rect` structs replace OpenCV types in the main app
+- Perception library exposes raw RGB buffer API: `ProcessFrame(uint8_t*, width, height)`
+- This reduces APK size by ~5-6 MB and avoids OpenCV dependency conflicts
+
+**State machine implementation:**
+
+- Pipeline state stored as enum: `PipelineState` (STOPPED → AGENT_RUNNING)
+- Node runtime tracking: `NodeRuntimeState` (runningLocally, detectedOnNetwork)
+- Topic probing drives state transitions automatically
+- One-way progression with rollback on node stop (cascades to downstream)
+- UI reflects state in real-time (disabled styling, runtime badges)
+
 ## How to Build
 
 You do not need ROS 2 installed on your machine to build the app.
@@ -128,7 +225,7 @@ You do not need ROS 2 installed on your machine to build the app.
 - Platform Tools 35.0.2
 - Build Tools 33.0.2 and 34.0.0
 - Platform API 33 and 34
-- NDK 25.1.8937393
+- NDK 26.3.11579264
 - CMake 3.22.1
 
 **Build Tools:**
@@ -162,7 +259,7 @@ unzip ~/Downloads/commandlinetools-linux-8512546_latest.zip
 Install SDK components (if it gives a linkage error try `sudo apt install openjdk-21-jre-headless`):
 
 ```bash
-./cmdline-tools/bin/sdkmanager --sdk_root=$HOME/android-sdk "build-tools;33.0.2" "build-tools;34.0.0" "platforms;android-33" "platforms;android-34" "ndk;25.1.8937393" "cmake;3.22.1"
+./cmdline-tools/bin/sdkmanager --sdk_root=$HOME/android-sdk "build-tools;33.0.2" "build-tools;34.0.0" "platforms;android-33" "platforms;android-34" "ndk;26.3.11579264" "cmake;3.22.1"
 ```
 
 Install JDK 21:

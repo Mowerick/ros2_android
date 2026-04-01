@@ -18,9 +18,10 @@ import com.github.mowerick.ros2.android.model.CameraInfo
 import com.github.mowerick.ros2.android.model.ExternalDeviceInfo
 import com.github.mowerick.ros2.android.model.ExternalDeviceType
 import com.github.mowerick.ros2.android.model.NativeNotification
-import com.github.mowerick.ros2.android.model.NodeDependencyGraph
+import com.github.mowerick.ros2.android.model.NodeRuntimeState
 import com.github.mowerick.ros2.android.model.NodeState
 import com.github.mowerick.ros2.android.model.PipelineNode
+import com.github.mowerick.ros2.android.model.PipelineState
 import com.github.mowerick.ros2.android.model.SensorInfo
 import com.github.mowerick.ros2.android.model.SensorReading
 import com.github.mowerick.ros2.android.model.SensorType
@@ -42,7 +43,6 @@ sealed class Screen {
     data object BuiltInSensors : Screen()
     data object ExternalSensors : Screen()
     data object Subsystem : Screen()
-    data object Perception : Screen()
     data class SensorDetail(val sensorId: String) : Screen()
     data class CameraDetail(val cameraId: String) : Screen()
     data class LidarDetail(val deviceId: String) : Screen()
@@ -113,6 +113,13 @@ class RosViewModel(
 
     private val _isProbing = MutableStateFlow(false)
     val isProbing: StateFlow<Boolean> = _isProbing
+
+    // Pipeline state machine
+    private val _pipelineState = MutableStateFlow(PipelineState.STOPPED)
+    val pipelineState: StateFlow<PipelineState> = _pipelineState
+
+    // Track runtime state of each node (local vs external)
+    private val nodeRuntimeStates = mutableMapOf<String, NodeRuntimeState>()
 
     // Perception (Object Detection) state
     data class PerceptionState(
@@ -417,28 +424,6 @@ class RosViewModel(
         _screen.value = Screen.Subsystem
     }
 
-    fun navigateToPerception() {
-        _screen.value = Screen.Perception
-        // Start polling perception stats
-        startPerceptionStatsPolling()
-    }
-
-    private fun startPerceptionStatsPolling() {
-        viewModelScope.launch {
-            while (_screen.value == Screen.Perception) {
-                try {
-                    val statsJson = NativeBridge.getPerceptionStats()
-                    // Parse JSON and update state
-                    // For now, just check if perception is enabled
-                    val isEnabled = NativeBridge.isPerceptionEnabled()
-                    _perceptionState.value = _perceptionState.value.copy(enabled = isEnabled)
-                } catch (e: Exception) {
-                    android.util.Log.e("RosViewModel", "Failed to get perception stats", e)
-                }
-                delay(500)  // Poll every 500ms
-            }
-        }
-    }
 
     // -- Sensor/Camera navigation --
 
@@ -465,14 +450,184 @@ class RosViewModel(
         _screen.value = Screen.NodeDetail(node.id)
     }
 
+    /**
+     * Check if a node can be started locally on this device.
+     * Returns false if node is already running elsewhere or upstream not ready.
+     */
+    fun canStartNodeLocally(nodeId: String): Boolean {
+        val runtime = nodeRuntimeStates[nodeId]
+        if (runtime?.detectedOnNetwork == true) return false // Already running elsewhere
+
+        return when (nodeId) {
+            "object_detection" -> _pipelineState.value == PipelineState.ZED_AVAILABLE
+            "target_manager" -> _pipelineState.value == PipelineState.DETECTION_RUNNING
+            "arm_commander" -> _pipelineState.value == PipelineState.TARGET_RUNNING
+            "micro_ros_agent" -> _pipelineState.value == PipelineState.ARM_RUNNING
+            else -> false
+        }
+    }
+
+    fun isNodeRunningLocally(nodeId: String): Boolean {
+        return nodeRuntimeStates[nodeId]?.runningLocally == true
+    }
+
+    fun isNodeDetectedOnNetwork(nodeId: String): Boolean {
+        return nodeRuntimeStates[nodeId]?.detectedOnNetwork == true
+    }
+
+    /**
+     * Get the display state for a node based on runtime state machine.
+     */
+    fun getNodeDisplayState(nodeId: String): NodeState {
+        val runtime = nodeRuntimeStates[nodeId]
+        return if (runtime?.isRunning == true) NodeState.Running else NodeState.Stopped
+    }
+
+    /**
+     * Start a node locally on this device.
+     * Handles node-specific initialization and advances pipeline state.
+     */
+    fun startNode(nodeId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                when (nodeId) {
+                    "object_detection" -> {
+                        val modelsPath = "${applicationContext.filesDir.absolutePath}/models"
+                        NativeBridge.enablePerception(modelsPath)
+                        nodeRuntimeStates["object_detection"] = NodeRuntimeState(runningLocally = true)
+                        withContext(Dispatchers.Main) {
+                            _pipelineState.value = PipelineState.DETECTION_RUNNING
+                            _perceptionState.value = _perceptionState.value.copy(enabled = true, modelsLoaded = true)
+                        }
+                    }
+                    "target_manager" -> {
+                        // TODO: Implement target manager start
+                        nodeRuntimeStates["target_manager"] = NodeRuntimeState(runningLocally = true)
+                        withContext(Dispatchers.Main) {
+                            _pipelineState.value = PipelineState.TARGET_RUNNING
+                        }
+                    }
+                    "arm_commander" -> {
+                        // TODO: Implement arm commander start
+                        nodeRuntimeStates["arm_commander"] = NodeRuntimeState(runningLocally = true)
+                        withContext(Dispatchers.Main) {
+                            _pipelineState.value = PipelineState.ARM_RUNNING
+                        }
+                    }
+                    "micro_ros_agent" -> {
+                        // TODO: Implement micro-ROS agent start
+                        nodeRuntimeStates["micro_ros_agent"] = NodeRuntimeState(runningLocally = true)
+                        withContext(Dispatchers.Main) {
+                            _pipelineState.value = PipelineState.AGENT_RUNNING
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("RosViewModel", "Failed to start node $nodeId", e)
+                withContext(Dispatchers.Main) {
+                    addNotification("Failed to start $nodeId: ${e.message}", Severity.ERROR)
+                }
+            }
+        }
+    }
+
+    /**
+     * Stop a node running locally on this device.
+     * Cascades stop to all downstream nodes and rolls back pipeline state.
+     */
+    fun stopNode(nodeId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                // Stop the node itself
+                when (nodeId) {
+                    "object_detection" -> {
+                        if (nodeRuntimeStates["object_detection"]?.runningLocally == true) {
+                            NativeBridge.disablePerception()
+                        }
+                        nodeRuntimeStates.remove("object_detection")
+                        withContext(Dispatchers.Main) {
+                            _perceptionState.value = _perceptionState.value.copy(enabled = false)
+                        }
+                    }
+                    "target_manager" -> {
+                        // TODO: Implement target manager stop
+                        nodeRuntimeStates.remove("target_manager")
+                    }
+                    "arm_commander" -> {
+                        // TODO: Implement arm commander stop
+                        nodeRuntimeStates.remove("arm_commander")
+                    }
+                    "micro_ros_agent" -> {
+                        // TODO: Implement micro-ROS agent stop
+                        nodeRuntimeStates.remove("micro_ros_agent")
+                    }
+                }
+
+                // Stop all downstream nodes
+                stopDownstreamNodes(nodeId)
+
+                // Rollback pipeline state
+                val newState = when (nodeId) {
+                    "object_detection" -> PipelineState.ZED_AVAILABLE
+                    "target_manager" -> PipelineState.DETECTION_RUNNING
+                    "arm_commander" -> PipelineState.TARGET_RUNNING
+                    "micro_ros_agent" -> PipelineState.ARM_RUNNING
+                    else -> _pipelineState.value
+                }
+
+                withContext(Dispatchers.Main) {
+                    _pipelineState.value = newState
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("RosViewModel", "Failed to stop node $nodeId", e)
+                withContext(Dispatchers.Main) {
+                    addNotification("Failed to stop $nodeId: ${e.message}", Severity.ERROR)
+                }
+            }
+        }
+    }
+
+    /**
+     * Stop all nodes downstream of the given node.
+     */
+    private fun stopDownstreamNodes(nodeId: String) {
+        val downstreamOrder = when (nodeId) {
+            "object_detection" -> listOf("target_manager", "arm_commander", "micro_ros_agent")
+            "target_manager" -> listOf("arm_commander", "micro_ros_agent")
+            "arm_commander" -> listOf("micro_ros_agent")
+            else -> emptyList()
+        }
+
+        for (downstream in downstreamOrder) {
+            if (nodeRuntimeStates[downstream]?.runningLocally == true) {
+                // Stop it without recursion
+                when (downstream) {
+                    "object_detection" -> NativeBridge.disablePerception()
+                    // TODO: Add other node stop calls
+                }
+                nodeRuntimeStates.remove(downstream)
+            }
+        }
+    }
+
     fun isNodeStartable(nodeId: String): Boolean {
-        val graph = NodeDependencyGraph(_pipelineNodes.value)
-        return graph.isNodeStartable(nodeId)
+        // Use new state machine logic
+        return canStartNodeLocally(nodeId)
     }
 
     fun toggleNodeState(nodeId: String) {
-        val graph = NodeDependencyGraph(_pipelineNodes.value)
-        _pipelineNodes.value = graph.toggleNodeState(nodeId)
+        val runtime = nodeRuntimeStates[nodeId]
+
+        if (runtime?.runningLocally == true) {
+            // Stop locally running node
+            stopNode(nodeId)
+        } else if (runtime?.detectedOnNetwork != true) {
+            // Start node if not running elsewhere
+            if (canStartNodeLocally(nodeId)) {
+                startNode(nodeId)
+            }
+        }
+        // If detectedOnNetwork == true, do nothing (can't control external)
     }
 
     // -- Back navigation --
@@ -490,7 +645,7 @@ class RosViewModel(
                 refreshExternalDevices()
                 _screen.value = Screen.ExternalSensors
             }
-            is Screen.BuiltInSensors, is Screen.ExternalSensors, is Screen.Subsystem, is Screen.Perception, is Screen.RosSetup -> {
+            is Screen.BuiltInSensors, is Screen.ExternalSensors, is Screen.Subsystem, is Screen.RosSetup -> {
                 _screen.value = Screen.Dashboard
             }
             is Screen.NodeDetail -> {
@@ -837,17 +992,86 @@ class RosViewModel(
         }
     }
 
+    /**
+     * Check if a node's published topics are all discovered on the network.
+     * Used to detect if a node is running on another device.
+     */
+    private fun checkNodeAvailability(
+        publishedTopics: List<TopicInfo>,
+        discoveredTopics: Set<String>
+    ): Boolean {
+        if (publishedTopics.isEmpty()) return false
+        return publishedTopics.all { it.name in discoveredTopics }
+    }
+
+    /**
+     * Advance pipeline state based on discovered topics.
+     * Checks each node to see if it's running elsewhere and updates state accordingly.
+     */
+    private fun advancePipelineState(discoveredTopics: Set<String>) {
+        val nodes = _pipelineNodes.value
+
+        when (_pipelineState.value) {
+            PipelineState.STOPPED -> {
+                // No action - wait for user to start probing
+            }
+            PipelineState.ZED_PROBING -> {
+                // Check if object detection's required topics are available
+                val detectionNode = nodes.find { it.id == "object_detection" }
+                if (detectionNode != null && checkNodeAvailability(detectionNode.subscribesTo, discoveredTopics)) {
+                    _pipelineState.value = PipelineState.ZED_AVAILABLE
+                }
+            }
+            PipelineState.ZED_AVAILABLE -> {
+                // Check if object detection is running elsewhere
+                val detectionNode = nodes.find { it.id == "object_detection" }
+                if (detectionNode != null && checkNodeAvailability(detectionNode.publishesTo, discoveredTopics)) {
+                    nodeRuntimeStates["object_detection"] = NodeRuntimeState(detectedOnNetwork = true)
+                    _pipelineState.value = PipelineState.DETECTION_RUNNING
+                }
+            }
+            PipelineState.DETECTION_RUNNING -> {
+                // Check if target manager is running elsewhere
+                val targetNode = nodes.find { it.id == "target_manager" }
+                if (targetNode != null && checkNodeAvailability(targetNode.publishesTo, discoveredTopics)) {
+                    nodeRuntimeStates["target_manager"] = NodeRuntimeState(detectedOnNetwork = true)
+                    _pipelineState.value = PipelineState.TARGET_RUNNING
+                }
+            }
+            PipelineState.TARGET_RUNNING -> {
+                // Check if arm commander is running elsewhere
+                val armNode = nodes.find { it.id == "arm_commander" }
+                if (armNode != null && checkNodeAvailability(armNode.publishesTo, discoveredTopics)) {
+                    nodeRuntimeStates["arm_commander"] = NodeRuntimeState(detectedOnNetwork = true)
+                    _pipelineState.value = PipelineState.ARM_RUNNING
+                }
+            }
+            PipelineState.ARM_RUNNING -> {
+                // Micro-ROS agent doesn't publish topics, so can't detect
+                // Would need to be started manually
+            }
+            PipelineState.AGENT_RUNNING -> {
+                // Already at final state
+            }
+        }
+    }
+
     fun toggleTopicProbing() {
         _isProbing.value = !_isProbing.value
         if (_isProbing.value) {
+            // Start probing
+            _pipelineState.value = PipelineState.ZED_PROBING
             viewModelScope.launch {
                 while (_isProbing.value) {
                     try {
                         val topics = NativeBridge.nativeGetDiscoveredTopics()
                         _discoveredTopics.value = topics.toSet()
-                        updateExternalNodeStates(topics.toSet())
+
+                        // Update state machine based on discovered topics
+                        advancePipelineState(topics.toSet())
                     } catch (_: UnsatisfiedLinkError) {
                         _isProbing.value = false
+                        _pipelineState.value = PipelineState.STOPPED
                         return@launch
                     } catch (e: Exception) {
                         android.util.Log.e("RosViewModel", "Failed to probe topics", e)
@@ -855,23 +1079,28 @@ class RosViewModel(
                     delay(2000)
                 }
             }
-        }
-    }
+        } else {
+            // Stop probing - reset pipeline state based on what's actually running locally
+            val newState = when {
+                nodeRuntimeStates["micro_ros_agent"]?.runningLocally == true -> PipelineState.AGENT_RUNNING
+                nodeRuntimeStates["arm_commander"]?.runningLocally == true -> PipelineState.ARM_RUNNING
+                nodeRuntimeStates["target_manager"]?.runningLocally == true -> PipelineState.TARGET_RUNNING
+                nodeRuntimeStates["object_detection"]?.runningLocally == true -> PipelineState.DETECTION_RUNNING
+                else -> PipelineState.STOPPED
+            }
+            _pipelineState.value = newState
 
-    private fun updateExternalNodeStates(discoveredTopics: Set<String>) {
-        val graph = NodeDependencyGraph(_pipelineNodes.value)
-        val (updated, changed) = graph.updateExternalNodeStates(discoveredTopics)
-
-        if (changed) {
-            _pipelineNodes.value = updated
-            // If an external node went to Stopped, cascade stop dependents
-            val stoppedExternals = updated.filter { it.isExternal && it.state == NodeState.Stopped }
-            for (ext in stoppedExternals) {
-                val cascadeGraph = NodeDependencyGraph(_pipelineNodes.value)
-                _pipelineNodes.value = cascadeGraph.cascadeStop(ext.id)
+            // Clear network detection states when probing stops
+            nodeRuntimeStates.replaceAll { _, state ->
+                if (state.detectedOnNetwork) {
+                    NodeRuntimeState(runningLocally = state.runningLocally, detectedOnNetwork = false)
+                } else {
+                    state
+                }
             }
         }
     }
+
 
 
     companion object {
@@ -880,7 +1109,6 @@ class RosViewModel(
                 id = "zed_stereo_node",
                 name = "ZED 2i Camera",
                 description = "Captures stereo image, depth, point cloud, and IMU data from ZED 2i camera. Runs on external NVIDIA Jetson/PC and streams to Android via DDS.",
-                state = NodeState.Stopped,
                 subscribesTo = emptyList(),
                 publishesTo = listOf(
                     TopicInfo("/zed/zed_node/rgb/image_rect_color/compressed", "sensor_msgs/msg/CompressedImage"),
@@ -893,9 +1121,8 @@ class RosViewModel(
             ),
             PipelineNode(
                 id = "object_detection",
-                name = "YOLOv9 Object Detection",
-                description = "Runs YOLOv9 + Deep SORT to detect and track Colorado Potato Beetle life stages (beetle, larva, eggs) in 3D space using ZED camera data.",
-                state = NodeState.Stopped,
+                name = "3D Object Detection",
+                description = "Runs 3D Object Detection and Deep SORT to detect and track Colorado Potato Beetle life stages (beetle, larva, eggs) in 3D space using ZED camera data.",
                 subscribesTo = listOf(
                     TopicInfo("/zed/zed_node/rgb/image_rect_color/compressed", "sensor_msgs/msg/CompressedImage"),
                     TopicInfo("/zed/zed_node/depth/depth_registered", "sensor_msgs/msg/Image"),
@@ -916,7 +1143,6 @@ class RosViewModel(
                 id = "target_manager",
                 name = "Target Manager",
                 description = "Selects primary targets (CPB eggs) and performs IMU-based orientation calibration for laser positioning. Computes pan/tilt commands with offset correction.",
-                state = NodeState.Stopped,
                 subscribesTo = listOf(
                     TopicInfo("/cpb_eggs_center", "geometry_msgs/msg/Point"),
                     TopicInfo("/zed/zed_node/imu/data", "sensor_msgs/msg/Imu")
@@ -931,7 +1157,6 @@ class RosViewModel(
                 id = "arm_commander",
                 name = "Arm Commander",
                 description = "State machine for pan/tilt arm control with ACK/NACK protocol. Manages command retries, timeouts, and feedback synchronization with microcontroller.",
-                state = NodeState.Stopped,
                 subscribesTo = listOf(
                     TopicInfo("/arm_position_goal", "std_msgs/msg/Float32MultiArray"),
                     TopicInfo("/PointNShoot_ACK", "std_msgs/msg/Float32"),
@@ -949,7 +1174,6 @@ class RosViewModel(
                 id = "micro_ros_agent",
                 name = "micro-ROS Agent",
                 description = "Bridges ROS 2 DDS network to Zephyr microcontroller via USB serial (921600 baud). Forwards /PointNShoot commands to pan/tilt arm MCU. Investigation - may require external PC.",
-                state = NodeState.Stopped,
                 subscribesTo = listOf(
                     TopicInfo("/PointNShoot", "std_msgs/msg/Float32MultiArray")
                 ),

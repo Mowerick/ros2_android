@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.Button
@@ -25,8 +26,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.github.mowerick.ros2.android.model.NodeState
 import com.github.mowerick.ros2.android.model.PipelineNode
+import com.github.mowerick.ros2.android.ui.components.CollapsibleCard
 import com.github.mowerick.ros2.android.ui.components.NodeStateChip
 import com.github.mowerick.ros2.android.ui.components.TopicInfoCard
+
+/**
+ * Perception statistics for object detection display
+ */
+data class PerceptionStats(
+    val totalDetections: Int = 0,
+    val activeTrackCount: Int = 0,
+    val queueSize: Int = 0,
+    val modelsLoaded: Boolean = false
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -34,7 +46,11 @@ fun NodeDetailScreen(
     node: PipelineNode,
     canStart: Boolean,
     onBack: () -> Unit,
-    onStartStop: () -> Unit
+    onStartStop: () -> Unit,
+    runningLocally: Boolean = false,
+    detectedOnNetwork: Boolean = false,
+    perceptionEnabled: Boolean = false,
+    perceptionStats: PerceptionStats? = null
 ) {
     Scaffold(
         topBar = {
@@ -48,49 +64,145 @@ fun NodeDetailScreen(
             )
         }
     ) { padding ->
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(16.dp),
+                .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             // State and start/stop
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                NodeStateChip(state = node.state)
-                if (!node.isExternal) {
-                    if (node.state == NodeState.Running) {
-                        OutlinedButton(
-                            onClick = onStartStop,
-                            modifier = Modifier.height(40.dp)
-                        ) {
-                            Text("Stop Node")
-                        }
-                    } else {
-                        Button(
-                            onClick = onStartStop,
-                            enabled = canStart,
-                            modifier = Modifier.height(40.dp)
-                        ) {
-                            Text(if (canStart) "Start Node" else "Waiting for upstream")
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val displayState = if (runningLocally || detectedOnNetwork) NodeState.Running else NodeState.Stopped
+                    NodeStateChip(state = displayState)
+                    if (!node.isExternal) {
+                        when {
+                            detectedOnNetwork -> {
+                                Text(
+                                    text = "Running on Network",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.tertiary
+                                )
+                            }
+                            runningLocally -> {
+                                OutlinedButton(
+                                    onClick = onStartStop,
+                                    modifier = Modifier.height(40.dp)
+                                ) {
+                                    Text("Stop Node")
+                                }
+                            }
+                            else -> {
+                                Button(
+                                    onClick = onStartStop,
+                                    enabled = canStart,
+                                    modifier = Modifier.height(40.dp)
+                                ) {
+                                    Text(if (canStart) "Start Node" else "Waiting for upstream")
+                                }
+                            }
                         }
                     }
                 }
             }
 
-            // External badge
-            if (node.isExternal) {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("External Node", style = MaterialTheme.typography.titleSmall)
+            // Runtime state badge
+            item {
+                if (node.isExternal) {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text("External Hardware", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                text = "This node runs on external hardware (Jetson/PC) and is not managed by this app.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
+                    }
+                } else if (detectedOnNetwork) {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text("Running on Another Device", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                text = "This node is running on another Android device or PC on the network.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
+                    }
+                } else if (runningLocally) {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text("Running Locally", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                text = "This node is running on this Android device.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Perception-specific stats (only for object_detection node running locally)
+            if (node.id == "object_detection" && runningLocally && perceptionStats != null) {
+                item {
+                    CollapsibleCard(
+                        title = "Detection Statistics",
+                        initiallyExpanded = true
+                    ) {
                         Text(
-                            text = "This node runs on an external device (Jetson/PC) and is not managed by this app.",
+                            text = "Status: ${if (perceptionEnabled) "Running" else "Stopped"}",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = "Total Detections: ${perceptionStats.totalDetections}",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                        Text(
+                            text = "Active Tracks: ${perceptionStats.activeTrackCount}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                        Text(
+                            text = "Queue Size: ${perceptionStats.queueSize}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                }
+
+                item {
+                    CollapsibleCard(
+                        title = "Pipeline Info",
+                        initiallyExpanded = false
+                    ) {
+                        Text(
+                            text = "Detector: YOLOv9-s (NCNN)",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = "Tracker: Deep SORT (MARS ReID)",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                        Text(
+                            text = "Classes: CPB Beetle, Larva, Eggs",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                        Text(
+                            text = "Input: ZED 2i (RGB + Depth + Point Cloud)",
+                            style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.padding(top = 4.dp)
                         )
                     }
@@ -98,21 +210,26 @@ fun NodeDetailScreen(
             }
 
             // Description
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Description", style = MaterialTheme.typography.titleSmall)
-                    Text(
-                        text = node.description,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
+            item {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Description", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            text = node.description,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
                 }
             }
 
             // Subscribes to
             if (node.subscribesTo.isNotEmpty()) {
-                Text("Subscribes to", style = MaterialTheme.typography.titleSmall)
-                node.subscribesTo.forEach { topic ->
+                item {
+                    Text("Subscribes to", style = MaterialTheme.typography.titleSmall)
+                }
+                items(node.subscribesTo.size) { index ->
+                    val topic = node.subscribesTo[index]
                     TopicInfoCard(
                         label = "SUB",
                         topicName = topic.name,
@@ -123,8 +240,11 @@ fun NodeDetailScreen(
 
             // Publishes to
             if (node.publishesTo.isNotEmpty()) {
-                Text("Publishes to", style = MaterialTheme.typography.titleSmall)
-                node.publishesTo.forEach { topic ->
+                item {
+                    Text("Publishes to", style = MaterialTheme.typography.titleSmall)
+                }
+                items(node.publishesTo.size) { index ->
+                    val topic = node.publishesTo[index]
                     TopicInfoCard(
                         label = "PUB",
                         topicName = topic.name,

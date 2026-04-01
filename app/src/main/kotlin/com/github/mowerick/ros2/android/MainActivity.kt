@@ -27,6 +27,7 @@ import com.github.mowerick.ros2.android.ui.screens.ExternalSensorsScreen
 import com.github.mowerick.ros2.android.ui.screens.LidarDetailScreen
 import com.github.mowerick.ros2.android.ui.screens.NodeDetailScreen
 import com.github.mowerick.ros2.android.ui.screens.PerceptionScreen
+import com.github.mowerick.ros2.android.ui.screens.PerceptionStats
 import com.github.mowerick.ros2.android.ui.screens.RosSetupScreen
 import com.github.mowerick.ros2.android.ui.screens.SensorDetailScreen
 import com.github.mowerick.ros2.android.ui.screens.SubsystemScreen
@@ -243,8 +244,7 @@ class MainActivity : ComponentActivity(), PermissionHandler, NetworkInterfacePro
                         onSettingsClick = { vm.navigateToRosSetup() },
                         onBuiltInSensorsClick = { vm.navigateToBuiltInSensors() },
                         onExternalSensorsClick = { vm.navigateToExternalSensors() },
-                        onSubsystemClick = { vm.navigateToSubsystem() },
-                        onPerceptionClick = { vm.navigateToPerception() }
+                        onSubsystemClick = { vm.navigateToSubsystem() }
                     )
                     is Screen.RosSetup -> RosSetupScreen(
                         rosStarted = rosStarted,
@@ -331,13 +331,9 @@ class MainActivity : ComponentActivity(), PermissionHandler, NetworkInterfacePro
                         onNodeStartStop = { vm.toggleNodeState(it) },
                         isNodeStartable = { vm.isNodeStartable(it) },
                         isProbing = isProbing,
-                        onToggleProbing = { vm.toggleTopicProbing() }
-                    )
-                    is Screen.Perception -> PerceptionScreen(
-                        perceptionState = perceptionState,
-                        onBack = { vm.navigateBack() },
-                        onEnable = { vm.enablePerception() },
-                        onDisable = { vm.disablePerception() }
+                        onToggleProbing = { vm.toggleTopicProbing() },
+                        isRunningLocally = { vm.isNodeRunningLocally(it) },
+                        isDetectedOnNetwork = { vm.isNodeDetectedOnNetwork(it) }
                     )
                     is Screen.NodeDetail -> {
                         val node = pipelineNodes.find { it.id == s.nodeId }
@@ -346,7 +342,18 @@ class MainActivity : ComponentActivity(), PermissionHandler, NetworkInterfacePro
                                 node = node,
                                 canStart = vm.isNodeStartable(node.id),
                                 onBack = { vm.navigateBack() },
-                                onStartStop = { vm.toggleNodeState(node.id) }
+                                onStartStop = { vm.toggleNodeState(node.id) },
+                                runningLocally = vm.isNodeRunningLocally(node.id),
+                                detectedOnNetwork = vm.isNodeDetectedOnNetwork(node.id),
+                                perceptionEnabled = perceptionState.enabled,
+                                perceptionStats = if (node.id == "object_detection") {
+                                    PerceptionStats(
+                                        totalDetections = perceptionState.totalDetections,
+                                        activeTrackCount = perceptionState.activeTrackCount,
+                                        queueSize = perceptionState.queueSize,
+                                        modelsLoaded = perceptionState.modelsLoaded
+                                    )
+                                } else null
                             )
                         }
                     }
