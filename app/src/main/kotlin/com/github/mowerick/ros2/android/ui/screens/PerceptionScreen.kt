@@ -21,12 +21,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.github.mowerick.ros2.android.ui.components.CollapsibleCard
-import com.github.mowerick.ros2.android.viewmodel.RosViewModel
+import com.github.mowerick.ros2.android.viewmodel.managers.PerceptionManager
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PerceptionScreen(
-    perceptionState: RosViewModel.PerceptionState,
+    perceptionState: PerceptionManager.PerceptionState,
     onBack: () -> Unit,
     onEnable: () -> Unit,
     onDisable: () -> Unit
