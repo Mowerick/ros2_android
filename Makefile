@@ -25,18 +25,18 @@ endif
 
 # Convenience aliases
 .PHONY: debug release
-debug: BUILD_TYPE := Debug
-debug: all
-release: BUILD_TYPE := Release
-release: all
+debug:
+	$(MAKE) all BUILD_TYPE=Debug
+release:
+	$(MAKE) all BUILD_TYPE=Release
 
 # Parallelism
 NPROC := $(shell nproc)
 
 # Marker files for incremental builds
 DEPS_STAMP := $(DEPS_DIR)/.deps-fetched
-NATIVE_STAMP := $(BUILD_DIR)/.native-built
-APK_STAMP := app/build/.apk-built
+NATIVE_STAMP := $(BUILD_DIR)/.native-built-$(BUILD_TYPE)
+APK_STAMP := app/build/.apk-built-$(APK_VARIANT)
 
 .PHONY: all native app clean clean-app clean-native clean-deps help \
        setup-install install run logcat
