@@ -59,6 +59,10 @@ fi
 # Configure iptables rules for DDS multicast discovery
 info "Configuring iptables firewall rules..."
 
+# Allow ICMP (ping)
+sudo iptables -A INPUT -p icmp -s "$ANDROID_IP" -j ACCEPT 2>/dev/null ||
+    sudo iptables -A INPUT -p icmp -s "$ANDROID_IP" -j ACCEPT
+
 # Allow IGMP (multicast group joins)
 sudo iptables -C INPUT -p igmp -j ACCEPT 2>/dev/null ||
     sudo iptables -I INPUT 1 -p igmp -j ACCEPT
@@ -84,7 +88,7 @@ fi
 
 # Start ROS 2 daemon
 info "Starting ROS 2 daemon on Domain $DOMAIN_ID..."
-ros2 daemon stop 2>/dev/null || true 
+ros2 daemon stop 2>/dev/null || true
 sleep 1
 ros2 daemon start
 
