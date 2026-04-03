@@ -139,7 +139,8 @@ class RosViewModel(
         NativeBridge.setDebugFrameCallback { frameId ->
             viewModelScope.launch {
                 val currentScreen = screen.value
-                if (currentScreen is Screen.NodeDetail && currentScreen.nodeId == "object_detection") {
+                if ((currentScreen is Screen.NodeDetail && currentScreen.nodeId == "object_detection") ||
+                     currentScreen is Screen.DebugVisualizationFullscreen) {
                     perceptionManager.updateDebugFrame(frameId)
                 }
             }
