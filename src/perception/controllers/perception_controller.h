@@ -94,6 +94,25 @@ class PerceptionController : public SensorDataProvider {
   size_t GetTotalDetections() const { return total_detections_; }
   size_t GetActiveTrackCount() const { return active_tracks_; }
 
+  /**
+   * Enable/disable debug visualization (JPEG encoding + storage)
+   * @param enable true to enable, false to disable
+   */
+  void EnableVisualization(bool enable) { visualization_enabled_ = enable; }
+
+  /**
+   * Check if visualization is enabled
+   */
+  bool IsVisualizationEnabled() const { return visualization_enabled_; }
+
+  /**
+   * Get debug frame (JPEG-encoded)
+   * @param frame_id "rgb_annotated" or "depth_annotated"
+   * @param out_jpeg Output JPEG data
+   * @return true if frame available, false otherwise
+   */
+  bool GetDebugFrame(const std::string& frame_id, std::vector<uint8_t>& out_jpeg);
+
  private:
   // ============================================================================
   // Latest message storage (matches Python reference approach)
@@ -107,12 +126,29 @@ class PerceptionController : public SensorDataProvider {
   sensor_msgs::msg::PointCloud2::SharedPtr latest_cloud_;
   std::mutex latest_mutex_;
 
+  // Camera readiness flags (matches Python lines 73-75)
+  std::atomic<bool> camera_rgb_{false};
+  std::atomic<bool> camera_depth_{false};
+  std::atomic<bool> camera_pointcloud_{false};
+
+  // Timestamp tracking to prevent infinite message reprocessing
+  rclcpp::Time last_processed_rgb_stamp_{0, 0, RCL_ROS_TIME};
+
+  // Debug frame storage for JNI visualization
+  std::mutex debug_frames_mutex_;
+  std::map<std::string, std::vector<uint8_t>> debug_frames_jpeg_;  // "rgb_annotated", "depth_annotated" → JPEG data
+  std::atomic<bool> visualization_enabled_{false};
+
   // ============================================================================
   // ROS infrastructure
   // ============================================================================
 
   RosInterface& ros_;
   bool enabled_ = false;
+
+  // 20Hz timer (matches Python line 79: frequency = 20 Hz)
+  rclcpp::TimerBase::SharedPtr timer_;
+  static constexpr int kFrequencyHz = 20;
 
   // Subscriptions (from external ZED camera device)
   rclcpp::Subscription<sensor_msgs::msg::CompressedImage>::SharedPtr rgb_sub_;
@@ -164,6 +200,11 @@ class PerceptionController : public SensorDataProvider {
    */
   void OnPointCloud(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
 
+  /**
+   * Timer callback (20Hz) - triggers inference when camera_rgb_ is ready
+   */
+  void TimerCallback();
+
   // ============================================================================
   // Inference thread
   // ============================================================================
@@ -191,27 +232,29 @@ class PerceptionController : public SensorDataProvider {
                         const sensor_msgs::msg::PointCloud2& cloud);
 
   /**
-   * Crop point cloud to bbox region
+   * Crop point cloud to bbox region with depth filtering
    * @param bbox Bounding box in image coordinates
    * @param cloud Point cloud message
+   * @param depth Depth image for outlier filtering (median ±10%)
    * @return Cropped point cloud (or nullptr if invalid)
    */
   sensor_msgs::msg::PointCloud2::UniquePtr CropPointCloud(
       const Rect& bbox,
-      const sensor_msgs::msg::PointCloud2& cloud);
+      const sensor_msgs::msg::PointCloud2& cloud,
+      const sensor_msgs::msg::Image& depth);
 
   // ============================================================================
   // Publishing and logging
   // ============================================================================
 
   /**
-   * Publish detection results for one track
-   * @param track Detection track from Deep SORT
+   * Publish detection results for one detection
+   * @param det Detection from YOLO (before Deep SORT)
    * @param point3d 3D world coordinates
    * @param cropped_cloud Cropped point cloud for this detection
    * @param header Message header (for timestamp)
    */
-  void PublishDetection(const perception::Track& track,
+  void PublishDetection(const perception::Detection& det,
                         const Point3f& point3d,
                         sensor_msgs::msg::PointCloud2::UniquePtr cropped_cloud,
                         const std_msgs::msg::Header& header);

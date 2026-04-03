@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 #include <unistd.h>
+#include <turbojpeg.h>
 
 #include "camera/base/camera_descriptor.h"
 #include "camera/camera_manager.h"
@@ -18,6 +19,7 @@
 #include "core/notification_queue.h"
 #include "core/sensor_data_callback_queue.h"
 #include "core/camera_frame_callback_queue.h"
+#include "core/debug_frame_callback_queue.h"
 #include "jni/bitmap_utils.h"
 #include "jni/jni_object_utils.h"
 #include "jni/jvm.h"
@@ -47,6 +49,11 @@ static jmethodID g_sensor_data_callback_method = nullptr;
 static std::mutex g_camera_frame_callback_mutex;
 static jobject g_camera_frame_callback_object = nullptr;
 static jmethodID g_camera_frame_callback_method = nullptr;
+
+// Debug frame callback state
+static std::mutex g_debug_frame_callback_mutex;
+static jobject g_debug_frame_callback_object = nullptr;
+static jmethodID g_debug_frame_callback_method = nullptr;
 
 // USB Serial JNI bridge state (used by android_jni_serial.cpp)
 namespace ydlidar
@@ -1350,6 +1357,174 @@ extern "C"
 
     std::string stats = g_app->perception_controller_->GetLastMeasurementJson();
     return env->NewStringUTF(stats.c_str());
+  }
+
+  // ============================================================================
+  // Perception Debug Visualization JNI Functions
+  // ============================================================================
+
+  JNIEXPORT void JNICALL
+  Java_com_github_mowerick_ros2_android_util_NativeBridge_nativeEnablePerceptionVisualization(
+      JNIEnv * /*env*/, jclass /*clazz*/, jboolean enable)
+  {
+    if (!g_app || !g_app->perception_controller_)
+    {
+      LOGW("nativeEnablePerceptionVisualization: perception_controller not available");
+      return;
+    }
+
+    g_app->perception_controller_->EnableVisualization(enable == JNI_TRUE);
+    LOGI("Perception visualization %s", enable ? "enabled" : "disabled");
+  }
+
+  JNIEXPORT void JNICALL
+  Java_com_github_mowerick_ros2_android_util_NativeBridge_nativeSetDebugFrameCallback(
+      JNIEnv *env, jobject thiz)
+  {
+    std::lock_guard<std::mutex> lock(g_debug_frame_callback_mutex);
+
+    // Clean up previous callback if it exists
+    if (g_debug_frame_callback_object != nullptr)
+    {
+      env->DeleteGlobalRef(g_debug_frame_callback_object);
+      g_debug_frame_callback_object = nullptr;
+      g_debug_frame_callback_method = nullptr;
+    }
+
+    // Store global reference to the NativeBridge object
+    g_debug_frame_callback_object = env->NewGlobalRef(thiz);
+
+    // Get the class and method ID for onDebugFrameUpdate
+    jclass clazz = env->GetObjectClass(thiz);
+    g_debug_frame_callback_method = env->GetStaticMethodID(
+        clazz, "onDebugFrameUpdate", "(Ljava/lang/String;)V");
+
+    if (g_debug_frame_callback_method == nullptr)
+    {
+      LOGE("Failed to find onDebugFrameUpdate method");
+      env->DeleteGlobalRef(g_debug_frame_callback_object);
+      g_debug_frame_callback_object = nullptr;
+      return;
+    }
+
+    env->DeleteLocalRef(clazz);
+
+    // Set the callback in DebugFrameCallbackQueue
+    ros2_android::DebugFrameCallbackQueue::Instance().SetCallback(
+        [](const std::string &frame_id)
+        {
+          std::lock_guard<std::mutex> lock(g_debug_frame_callback_mutex);
+          if (g_jvm == nullptr || g_debug_frame_callback_object == nullptr ||
+              g_debug_frame_callback_method == nullptr)
+          {
+            return;
+          }
+
+          JNIEnv *env = nullptr;
+          bool did_attach = false;
+          int status = g_jvm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_6);
+
+          if (status == JNI_EDETACHED)
+          {
+            if (g_jvm->AttachCurrentThread(&env, nullptr) != 0)
+            {
+              LOGE("Failed to attach thread for debug frame callback");
+              return;
+            }
+            did_attach = true;
+          }
+
+          jstring j_frame_id = env->NewStringUTF(frame_id.c_str());
+          jclass clazz = env->GetObjectClass(g_debug_frame_callback_object);
+          env->CallStaticVoidMethod(clazz, g_debug_frame_callback_method, j_frame_id);
+
+          env->DeleteLocalRef(j_frame_id);
+          env->DeleteLocalRef(clazz);
+
+          if (did_attach)
+          {
+            g_jvm->DetachCurrentThread();
+          }
+        });
+
+    LOGI("Debug frame callback registered");
+  }
+
+  JNIEXPORT jobject JNICALL
+  Java_com_github_mowerick_ros2_android_util_NativeBridge_nativeGetDebugFrame(
+      JNIEnv *env, jclass /*clazz*/, jstring frame_id)
+  {
+    if (!g_app || !g_app->perception_controller_)
+    {
+      return nullptr;
+    }
+
+    const char *frame_id_c = env->GetStringUTFChars(frame_id, nullptr);
+    std::string frame_id_str(frame_id_c);
+    env->ReleaseStringUTFChars(frame_id, frame_id_c);
+
+    // Get JPEG data from perception controller
+    std::vector<uint8_t> jpeg_data;
+    if (!g_app->perception_controller_->GetDebugFrame(frame_id_str, jpeg_data))
+    {
+      return nullptr;
+    }
+
+    if (jpeg_data.empty())
+    {
+      return nullptr;
+    }
+
+    // Decompress JPEG to create Android Bitmap
+    // Use TurboJPEG to decode
+    tjhandle decompressor = tjInitDecompress();
+    if (!decompressor)
+    {
+      LOGE("Failed to init TurboJPEG for debug frame decode");
+      return nullptr;
+    }
+
+    int width, height, jpegSubsamp, jpegColorspace;
+    int tj_result = tjDecompressHeader3(
+        decompressor,
+        jpeg_data.data(),
+        jpeg_data.size(),
+        &width,
+        &height,
+        &jpegSubsamp,
+        &jpegColorspace);
+
+    if (tj_result != 0)
+    {
+      LOGE("Failed to decode debug frame JPEG header");
+      tjDestroy(decompressor);
+      return nullptr;
+    }
+
+    // Allocate RGBA buffer for Android bitmap
+    std::vector<uint8_t> rgba_buffer(width * height * 4);
+
+    tj_result = tjDecompress2(
+        decompressor,
+        jpeg_data.data(),
+        jpeg_data.size(),
+        rgba_buffer.data(),
+        width,
+        0,  // pitch
+        height,
+        TJPF_RGBA,  // Android expects RGBA
+        TJFLAG_FASTDCT);
+
+    tjDestroy(decompressor);
+
+    if (tj_result != 0)
+    {
+      LOGE("Failed to decompress debug frame JPEG");
+      return nullptr;
+    }
+
+    // Create Android Bitmap from RGBA data
+    return ros2_android::jni::CreateBitmapFromRGB(env, rgba_buffer.data(), width, height);
   }
 
 } // extern "C"
