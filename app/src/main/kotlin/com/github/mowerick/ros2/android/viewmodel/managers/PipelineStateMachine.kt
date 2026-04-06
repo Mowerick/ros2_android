@@ -304,13 +304,16 @@ class PipelineStateMachine(
         }
 
         for (downstream in downstreamOrder) {
-            if (_nodeStates.value[downstream]?.runningLocally == true) {
+            val state = _nodeStates.value[downstream] ?: continue
+            // Stop native components if running locally
+            if (state.runningLocally) {
                 when (downstream) {
                     "object_detection" -> NativeBridge.disablePerception()
                     "target_manager" -> NativeBridge.disableTargetManager()
                 }
-                removeNodeState(downstream)
             }
+            // Clear all state (running, probing, detected) for downstream nodes
+            removeNodeState(downstream)
         }
     }
 
