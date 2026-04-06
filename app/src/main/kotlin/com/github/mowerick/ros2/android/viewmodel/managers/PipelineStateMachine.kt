@@ -194,9 +194,10 @@ class PipelineStateMachine(
                     try {
                         val topics = NativeBridge.nativeGetDiscoveredTopics()
                         _discoveredTopics.value = topics.toSet()
-
+                        android.util.Log.d("PipelineStateMachine", "state=${_pipelineState.value}, topics=${topics.joinToString(", ")}")
                         // Update state machine based on discovered topics
                         advancePipelineState(topics.toSet())
+                        android.util.Log.d("PipelineStateMachine", "after advance: state=${_pipelineState.value}")
                     } catch (_: UnsatisfiedLinkError) {
                         _isProbing.value = false
                         _pipelineState.value = PipelineState.STOPPED
@@ -204,7 +205,7 @@ class PipelineStateMachine(
                     } catch (e: Exception) {
                         android.util.Log.e("PipelineStateMachine", "Failed to probe topics", e)
                     }
-                    delay(2000)
+                    delay(5000)
                 }
             }
         } else {
@@ -264,6 +265,7 @@ class PipelineStateMachine(
                     // Mark ZED node as running on network
                     nodeRuntimeStates["zed_stereo_node"] = NodeRuntimeState(detectedOnNetwork = true)
                     _pipelineState.value = PipelineState.ZED_AVAILABLE
+                    _isProbing.value = false
                 }
             }
             PipelineState.ZED_AVAILABLE -> {
