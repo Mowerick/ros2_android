@@ -87,6 +87,9 @@ add_library(android-ros SHARED
 
   # Perception controller (NCNN ML pipeline)
   perception/controllers/perception_controller.cc
+
+  # Targeting controller (laser positioning)
+  targeting/controllers/target_manager_controller.cc
 )
 target_link_libraries(android-ros PRIVATE
     android

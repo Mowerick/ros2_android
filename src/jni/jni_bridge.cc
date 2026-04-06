@@ -26,6 +26,7 @@
 #include "lidar/controllers/lidar_controller.h"
 #include "lidar/impl/ydlidar_device.h"
 #include "perception/controllers/perception_controller.h"
+#include "targeting/controllers/target_manager_controller.h"
 #include "ros/ros_interface.h"
 #include <core/serial/serial.h>
 #include "sensors/base/sensor_data_provider.h"
@@ -230,6 +231,18 @@ public:
       }
       perception_controller_.reset();
       LOGI("Cleanup: Perception controller cleared");
+    }
+
+    // Clear target manager controller
+    if (target_manager_controller_)
+    {
+      LOGI("Cleanup: Disabling target manager controller");
+      if (target_manager_controller_->IsEnabled())
+      {
+        target_manager_controller_->Disable();
+      }
+      target_manager_controller_.reset();
+      LOGI("Cleanup: Target manager controller cleared");
     }
 
     // IMPORTANT: Shutdown sensors BEFORE destructor to join threads cleanly
@@ -567,6 +580,7 @@ public:
 
   // Perception (ML pipeline)
   std::unique_ptr<ros2_android::PerceptionController> perception_controller_;
+  std::unique_ptr<ros2_android::TargetManagerController> target_manager_controller_;
 };
 
 static std::unique_ptr<AndroidApp> g_app;
@@ -1512,6 +1526,82 @@ extern "C"
 
     // Create Android Bitmap from RGBA data
     return ros2_android::jni::CreateBitmapFromRGB(env, rgba_buffer.data(), width, height);
+  }
+
+  // ============================================================================
+  // Target Manager JNI Functions
+  // ============================================================================
+
+  JNIEXPORT void JNICALL
+  Java_com_github_mowerick_ros2_android_util_NativeBridge_enableTargetManager(
+      JNIEnv * /*env*/, jclass /*clazz*/)
+  {
+    if (!g_app)
+    {
+      LOGE("enableTargetManager: g_app is null");
+      return;
+    }
+
+    if (!g_app->ros_ || !g_app->ros_->Initialized())
+    {
+      LOGE("enableTargetManager: ROS not initialized");
+      return;
+    }
+
+    if (!g_app->target_manager_controller_)
+    {
+      g_app->target_manager_controller_ =
+          std::make_unique<ros2_android::TargetManagerController>(*g_app->ros_);
+    }
+
+    g_app->target_manager_controller_->Enable();
+    LOGI("Target manager enabled");
+  }
+
+  JNIEXPORT void JNICALL
+  Java_com_github_mowerick_ros2_android_util_NativeBridge_disableTargetManager(
+      JNIEnv * /*env*/, jclass /*clazz*/)
+  {
+    if (!g_app)
+    {
+      LOGE("disableTargetManager: g_app is null");
+      return;
+    }
+
+    if (g_app->target_manager_controller_)
+    {
+      LOGI("disableTargetManager: Disabling target manager");
+      g_app->target_manager_controller_->Disable();
+    }
+    else
+    {
+      LOGW("disableTargetManager: target_manager_controller_ is null");
+    }
+  }
+
+  JNIEXPORT jboolean JNICALL
+  Java_com_github_mowerick_ros2_android_util_NativeBridge_isTargetManagerEnabled(
+      JNIEnv * /*env*/, jclass /*clazz*/)
+  {
+    if (!g_app || !g_app->target_manager_controller_)
+    {
+      return JNI_FALSE;
+    }
+
+    return g_app->target_manager_controller_->IsEnabled() ? JNI_TRUE : JNI_FALSE;
+  }
+
+  JNIEXPORT void JNICALL
+  Java_com_github_mowerick_ros2_android_util_NativeBridge_setTargetManagerFixedPositionMode(
+      JNIEnv * /*env*/, jclass /*clazz*/, jboolean enabled)
+  {
+    if (!g_app || !g_app->target_manager_controller_)
+    {
+      LOGW("setTargetManagerFixedPositionMode: controller is null");
+      return;
+    }
+
+    g_app->target_manager_controller_->SetFixedPositionMode(enabled == JNI_TRUE);
   }
 
 } // extern "C"
