@@ -9,6 +9,7 @@ import com.github.mowerick.ros2.android.model.PipelineState
 import com.github.mowerick.ros2.android.model.TopicInfo
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -17,7 +18,10 @@ import kotlinx.coroutines.withContext
 
 /**
  * Manages the ROS 2 perception & positioning pipeline state machine.
- * Handles node lifecycle, topic probing, and distributed execution tracking.
+ * Handles node lifecycle, per-node topic probing, and distributed execution tracking.
+ *
+ * Each pipeline node can independently probe for its topics on the network,
+ * enabling distributed deployments where different nodes run on different devices.
  */
 class PipelineStateMachine(
     private val applicationContext: Context,
@@ -29,47 +33,60 @@ class PipelineStateMachine(
     private val _pipelineNodes = MutableStateFlow(createDefaultPipelineNodes())
     val pipelineNodes: StateFlow<List<PipelineNode>> = _pipelineNodes
 
+    private val _nodeStates = MutableStateFlow<Map<String, NodeRuntimeState>>(emptyMap())
+    val nodeStates: StateFlow<Map<String, NodeRuntimeState>> = _nodeStates
+
     private val _pipelineState = MutableStateFlow(PipelineState.STOPPED)
     val pipelineState: StateFlow<PipelineState> = _pipelineState
-
-    private val _isProbing = MutableStateFlow(false)
-    val isProbing: StateFlow<Boolean> = _isProbing
 
     private val _discoveredTopics = MutableStateFlow<Set<String>>(emptySet())
     val discoveredTopics: StateFlow<Set<String>> = _discoveredTopics
 
-    private val nodeRuntimeStates = mutableMapOf<String, NodeRuntimeState>()
+    private var sharedPollingJob: Job? = null
 
     // -- Query methods --
 
     fun canStartNodeLocally(nodeId: String): Boolean {
-        val runtime = nodeRuntimeStates[nodeId]
-        if (runtime?.detectedOnNetwork == true) return false // Already running elsewhere
+        val node = _pipelineNodes.value.find { it.id == nodeId } ?: return false
+        if (node.isExternal) return false
+        val state = _nodeStates.value[nodeId]
+        if (state?.runningLocally == true || state?.detectedOnNetwork == true) return false
+        return state?.upstreamAvailable == true
+    }
 
+    fun isNodeRunningLocally(nodeId: String): Boolean {
+        return _nodeStates.value[nodeId]?.runningLocally == true
+    }
+
+    fun isNodeDetectedOnNetwork(nodeId: String): Boolean {
+        return _nodeStates.value[nodeId]?.detectedOnNetwork == true
+    }
+
+    fun getNodeDisplayState(nodeId: String): NodeState {
+        val state = _nodeStates.value[nodeId]
+        return if (state?.isRunning == true) NodeState.Running else NodeState.Stopped
+    }
+
+    fun isNodeStartable(nodeId: String): Boolean {
+        return canStartNodeLocally(nodeId)
+    }
+
+    fun canProbeNode(nodeId: String): Boolean {
+        val state = _nodeStates.value[nodeId]
+        // Allow stopping an active probe
+        if (state?.isProbing == true) return true
+        // Can't probe if already running
+        if (state?.runningLocally == true || state?.detectedOnNetwork == true) return false
+
+        // Check if the pipeline FSM is in the correct state for this node to probe
         return when (nodeId) {
+            "zed_stereo_node" -> _pipelineState.value in listOf(PipelineState.STOPPED, PipelineState.ZED_PROBING)
             "object_detection" -> _pipelineState.value == PipelineState.ZED_AVAILABLE
             "target_manager" -> _pipelineState.value == PipelineState.DETECTION_RUNNING
             "arm_commander" -> _pipelineState.value == PipelineState.TARGET_RUNNING
             "micro_ros_agent" -> _pipelineState.value == PipelineState.ARM_RUNNING
             else -> false
         }
-    }
-
-    fun isNodeRunningLocally(nodeId: String): Boolean {
-        return nodeRuntimeStates[nodeId]?.runningLocally == true
-    }
-
-    fun isNodeDetectedOnNetwork(nodeId: String): Boolean {
-        return nodeRuntimeStates[nodeId]?.detectedOnNetwork == true
-    }
-
-    fun getNodeDisplayState(nodeId: String): NodeState {
-        val runtime = nodeRuntimeStates[nodeId]
-        return if (runtime?.isRunning == true) NodeState.Running else NodeState.Stopped
-    }
-
-    fun isNodeStartable(nodeId: String): Boolean {
-        return canStartNodeLocally(nodeId)
     }
 
     // -- Node lifecycle --
@@ -81,34 +98,17 @@ class PipelineStateMachine(
                     "object_detection" -> {
                         val modelsPath = "${applicationContext.filesDir.absolutePath}/models"
                         NativeBridge.enablePerception(modelsPath)
-                        nodeRuntimeStates["object_detection"] = NodeRuntimeState(runningLocally = true)
                         withContext(Dispatchers.Main) {
-                            _pipelineState.value = PipelineState.DETECTION_RUNNING
                             onPerceptionStateChange(true)
                         }
                     }
-                    "target_manager" -> {
-                        // TODO: Implement target manager start
-                        nodeRuntimeStates["target_manager"] = NodeRuntimeState(runningLocally = true)
-                        withContext(Dispatchers.Main) {
-                            _pipelineState.value = PipelineState.TARGET_RUNNING
-                        }
-                    }
-                    "arm_commander" -> {
-                        // TODO: Implement arm commander start
-                        nodeRuntimeStates["arm_commander"] = NodeRuntimeState(runningLocally = true)
-                        withContext(Dispatchers.Main) {
-                            _pipelineState.value = PipelineState.ARM_RUNNING
-                        }
-                    }
-                    "micro_ros_agent" -> {
-                        // TODO: Implement micro-ROS agent start
-                        nodeRuntimeStates["micro_ros_agent"] = NodeRuntimeState(runningLocally = true)
-                        withContext(Dispatchers.Main) {
-                            _pipelineState.value = PipelineState.AGENT_RUNNING
-                        }
-                    }
+                    "target_manager" -> { /* TODO: Implement target manager start */ }
+                    "arm_commander" -> { /* TODO: Implement arm commander start */ }
+                    "micro_ros_agent" -> { /* TODO: Implement micro-ROS agent start */ }
                 }
+                updateNodeState(nodeId) { it.copy(runningLocally = true, isProbing = false) }
+                advanceState()
+                updatePolling()
             } catch (e: Exception) {
                 android.util.Log.e("PipelineStateMachine", "Failed to start node $nodeId", e)
                 withContext(Dispatchers.Main) {
@@ -121,46 +121,24 @@ class PipelineStateMachine(
     fun stopNode(nodeId: String) {
         coroutineScope.launch(Dispatchers.IO) {
             try {
-                // Stop the node itself
                 when (nodeId) {
                     "object_detection" -> {
-                        if (nodeRuntimeStates["object_detection"]?.runningLocally == true) {
+                        if (_nodeStates.value["object_detection"]?.runningLocally == true) {
                             NativeBridge.disablePerception()
                         }
-                        nodeRuntimeStates.remove("object_detection")
                         withContext(Dispatchers.Main) {
                             onPerceptionStateChange(false)
                         }
                     }
-                    "target_manager" -> {
-                        // TODO: Implement target manager stop
-                        nodeRuntimeStates.remove("target_manager")
-                    }
-                    "arm_commander" -> {
-                        // TODO: Implement arm commander stop
-                        nodeRuntimeStates.remove("arm_commander")
-                    }
-                    "micro_ros_agent" -> {
-                        // TODO: Implement micro-ROS agent stop
-                        nodeRuntimeStates.remove("micro_ros_agent")
-                    }
+                    "target_manager" -> { /* TODO: Implement target manager stop */ }
+                    "arm_commander" -> { /* TODO: Implement arm commander stop */ }
+                    "micro_ros_agent" -> { /* TODO: Implement micro-ROS agent stop */ }
                 }
 
-                // Stop all downstream nodes
                 stopDownstreamNodes(nodeId)
-
-                // Rollback pipeline state
-                val newState = when (nodeId) {
-                    "object_detection" -> PipelineState.ZED_AVAILABLE
-                    "target_manager" -> PipelineState.DETECTION_RUNNING
-                    "arm_commander" -> PipelineState.TARGET_RUNNING
-                    "micro_ros_agent" -> PipelineState.ARM_RUNNING
-                    else -> _pipelineState.value
-                }
-
-                withContext(Dispatchers.Main) {
-                    _pipelineState.value = newState
-                }
+                removeNodeState(nodeId)
+                rollbackState()
+                updatePolling()
             } catch (e: Exception) {
                 android.util.Log.e("PipelineStateMachine", "Failed to stop node $nodeId", e)
                 withContext(Dispatchers.Main) {
@@ -171,36 +149,105 @@ class PipelineStateMachine(
     }
 
     fun toggleNodeState(nodeId: String) {
-        val runtime = nodeRuntimeStates[nodeId]
+        val state = _nodeStates.value[nodeId]
 
-        if (runtime?.runningLocally == true) {
+        if (state?.runningLocally == true) {
             stopNode(nodeId)
-        } else if (runtime?.detectedOnNetwork != true) {
+        } else if (state?.detectedOnNetwork != true) {
             if (canStartNodeLocally(nodeId)) {
                 startNode(nodeId)
             }
         }
     }
 
-    // -- Topic probing --
+    // -- Pipeline reset --
 
-    fun toggleTopicProbing() {
-        _isProbing.value = !_isProbing.value
-        if (_isProbing.value) {
-            // Start probing
-            _pipelineState.value = PipelineState.ZED_PROBING
-            coroutineScope.launch {
-                while (_isProbing.value) {
+    fun resetPipeline() {
+        // Stop any locally running nodes
+        for ((nodeId, state) in _nodeStates.value) {
+            if (state.runningLocally) {
+                when (nodeId) {
+                    "object_detection" -> NativeBridge.disablePerception()
+                    // TODO: Add other node stop calls
+                }
+            }
+        }
+        onPerceptionStateChange(false)
+        sharedPollingJob?.cancel()
+        sharedPollingJob = null
+        _nodeStates.value = emptyMap()
+        _pipelineState.value = PipelineState.STOPPED
+        _discoveredTopics.value = emptySet()
+    }
+
+    // -- Per-node topic probing --
+
+    fun toggleNodeProbing(nodeId: String) {
+        val current = _nodeStates.value[nodeId] ?: NodeRuntimeState()
+        val newProbing = !current.isProbing
+
+        if (newProbing) {
+            updateNodeState(nodeId) { it.copy(isProbing = true) }
+            // Advance from STOPPED to ZED_PROBING when first probe starts
+            if (_pipelineState.value == PipelineState.STOPPED) {
+                advanceState()
+            }
+        } else {
+            // Stop probing - keep upstreamAvailable and detectedOnNetwork intact
+            // (they reflect actual topic presence, managed by evaluateAllNodes)
+            updateNodeState(nodeId) { it.copy(isProbing = false) }
+            // Rollback from ZED_PROBING to STOPPED when no nodes are probing
+            if (_pipelineState.value == PipelineState.ZED_PROBING &&
+                !_nodeStates.value.values.any { it.isProbing }) {
+                rollbackState()
+            }
+        }
+
+        updatePolling()
+    }
+
+    // -- State transitions --
+
+    private fun advanceState() {
+        PipelineState.nextState(_pipelineState.value)?.let { _pipelineState.value = it }
+    }
+
+    private fun rollbackState() {
+        PipelineState.previousState(_pipelineState.value)?.let { _pipelineState.value = it }
+    }
+
+    // -- Private helpers --
+
+    private fun updateNodeState(nodeId: String, transform: (NodeRuntimeState) -> NodeRuntimeState) {
+        val current = _nodeStates.value[nodeId] ?: NodeRuntimeState()
+        _nodeStates.value = _nodeStates.value.toMutableMap().apply {
+            put(nodeId, transform(current))
+        }
+    }
+
+    private fun removeNodeState(nodeId: String) {
+        _nodeStates.value = _nodeStates.value.toMutableMap().apply {
+            remove(nodeId)
+        }
+    }
+
+    private fun updatePolling() {
+        val anyProbing = _nodeStates.value.values.any { it.isProbing }
+        if (anyProbing && sharedPollingJob == null) {
+            sharedPollingJob = coroutineScope.launch {
+                while (true) {
                     try {
-                        val topics = NativeBridge.nativeGetDiscoveredTopics()
-                        _discoveredTopics.value = topics.toSet()
-                        android.util.Log.d("PipelineStateMachine", "state=${_pipelineState.value}, topics=${topics.joinToString(", ")}")
-                        // Update state machine based on discovered topics
-                        advancePipelineState(topics.toSet())
-                        android.util.Log.d("PipelineStateMachine", "after advance: state=${_pipelineState.value}")
+                        val topics = NativeBridge.nativeGetDiscoveredTopics().toSet()
+                        _discoveredTopics.value = topics
+                        android.util.Log.d("PipelineStateMachine", "discovered topics: ${topics.joinToString(", ")}")
+                        evaluateAllNodes(topics)
                     } catch (_: UnsatisfiedLinkError) {
-                        _isProbing.value = false
+                        // Native library not loaded - stop all probing
+                        _nodeStates.value = _nodeStates.value.mapValues {
+                            it.value.copy(isProbing = false)
+                        }
                         _pipelineState.value = PipelineState.STOPPED
+                        sharedPollingJob = null
                         return@launch
                     } catch (e: Exception) {
                         android.util.Log.e("PipelineStateMachine", "Failed to probe topics", e)
@@ -208,29 +255,35 @@ class PipelineStateMachine(
                     delay(5000)
                 }
             }
-        } else {
-            // Stop probing - reset pipeline state based on what's actually running locally
-            val newState = when {
-                nodeRuntimeStates["micro_ros_agent"]?.runningLocally == true -> PipelineState.AGENT_RUNNING
-                nodeRuntimeStates["arm_commander"]?.runningLocally == true -> PipelineState.ARM_RUNNING
-                nodeRuntimeStates["target_manager"]?.runningLocally == true -> PipelineState.TARGET_RUNNING
-                nodeRuntimeStates["object_detection"]?.runningLocally == true -> PipelineState.DETECTION_RUNNING
-                else -> PipelineState.STOPPED
-            }
-            _pipelineState.value = newState
-
-            // Clear network detection states when probing stops
-            nodeRuntimeStates.replaceAll { _, state ->
-                if (state.detectedOnNetwork) {
-                    NodeRuntimeState(runningLocally = state.runningLocally, detectedOnNetwork = false)
-                } else {
-                    state
-                }
-            }
+        } else if (!anyProbing && sharedPollingJob != null) {
+            sharedPollingJob?.cancel()
+            sharedPollingJob = null
         }
     }
 
-    // -- Private helpers --
+    private fun evaluateAllNodes(discoveredTopics: Set<String>) {
+        for (node in _pipelineNodes.value) {
+            val wasUpstreamAvailable = _nodeStates.value[node.id]?.upstreamAvailable == true
+
+            val upstreamAvailable = node.subscribesTo.isEmpty() ||
+                node.subscribesTo.all { it.name in discoveredTopics }
+
+            // Only update upstreamAvailable - detectedOnNetwork is managed
+            // exclusively by the advancement logic below (based on downstream
+            // node's subscribesTo, not this node's publishesTo)
+            updateNodeState(node.id) { it.copy(upstreamAvailable = upstreamAvailable) }
+
+            // Advance when a node's subscribesTo topics are newly discovered
+            // This means the upstream node is providing what this node needs
+            if (upstreamAvailable && !wasUpstreamAvailable && node.subscribesTo.isNotEmpty()) {
+                node.upstreamNodeId?.let { upstreamId ->
+                    updateNodeState(upstreamId) { it.copy(detectedOnNetwork = true, isProbing = false) }
+                }
+                android.util.Log.d("PipelineStateMachine", "upstream available for ${node.id}, advancing state")
+                advanceState()
+            }
+        }
+    }
 
     private fun stopDownstreamNodes(nodeId: String) {
         val downstreamOrder = when (nodeId) {
@@ -241,104 +294,14 @@ class PipelineStateMachine(
         }
 
         for (downstream in downstreamOrder) {
-            if (nodeRuntimeStates[downstream]?.runningLocally == true) {
+            if (_nodeStates.value[downstream]?.runningLocally == true) {
                 when (downstream) {
                     "object_detection" -> NativeBridge.disablePerception()
                     // TODO: Add other node stop calls
                 }
-                nodeRuntimeStates.remove(downstream)
+                removeNodeState(downstream)
             }
         }
-    }
-
-    private fun advancePipelineState(discoveredTopics: Set<String>) {
-        val nodes = _pipelineNodes.value
-
-        when (_pipelineState.value) {
-            PipelineState.STOPPED -> {
-                // No action - wait for user to start probing
-            }
-            PipelineState.ZED_PROBING -> {
-                // Check if object detection's required topics are available
-                val detectionNode = nodes.find { it.id == "object_detection" }
-                if (detectionNode != null && checkNodeAvailability(detectionNode.subscribesTo, discoveredTopics)) {
-                    // Mark ZED node as running on network
-                    nodeRuntimeStates["zed_stereo_node"] = NodeRuntimeState(detectedOnNetwork = true)
-                    _pipelineState.value = PipelineState.ZED_AVAILABLE
-                    _isProbing.value = false
-                }
-            }
-            PipelineState.ZED_AVAILABLE -> {
-                // Check if ZED topics disappeared
-                val detectionNode = nodes.find { it.id == "object_detection" }
-                if (detectionNode != null && !checkNodeAvailability(detectionNode.subscribesTo, discoveredTopics)) {
-                    // ZED went offline - go back to probing
-                    nodeRuntimeStates.remove("zed_stereo_node")
-                    _pipelineState.value = PipelineState.ZED_PROBING
-                    return
-                }
-
-                // Check if object detection is running elsewhere
-                if (detectionNode != null && checkNodeAvailability(detectionNode.publishesTo, discoveredTopics)) {
-                    nodeRuntimeStates["object_detection"] = NodeRuntimeState(detectedOnNetwork = true)
-                    _pipelineState.value = PipelineState.DETECTION_RUNNING
-                }
-            }
-            PipelineState.DETECTION_RUNNING -> {
-                // Check if detection topics disappeared
-                val detectionNode = nodes.find { it.id == "object_detection" }
-                if (detectionNode != null && !checkNodeAvailability(detectionNode.publishesTo, discoveredTopics)) {
-                    // Detection went offline - go back to ZED_AVAILABLE
-                    nodeRuntimeStates.remove("object_detection")
-                    _pipelineState.value = PipelineState.ZED_AVAILABLE
-                    return
-                }
-
-                // Check if target manager is running elsewhere
-                val targetNode = nodes.find { it.id == "target_manager" }
-                if (targetNode != null && checkNodeAvailability(targetNode.publishesTo, discoveredTopics)) {
-                    nodeRuntimeStates["target_manager"] = NodeRuntimeState(detectedOnNetwork = true)
-                    _pipelineState.value = PipelineState.TARGET_RUNNING
-                }
-            }
-            PipelineState.TARGET_RUNNING -> {
-                // Check if target topics disappeared
-                val targetNode = nodes.find { it.id == "target_manager" }
-                if (targetNode != null && !checkNodeAvailability(targetNode.publishesTo, discoveredTopics)) {
-                    // Target went offline - go back to DETECTION_RUNNING
-                    nodeRuntimeStates.remove("target_manager")
-                    _pipelineState.value = PipelineState.DETECTION_RUNNING
-                    return
-                }
-
-                // Check if arm commander is running elsewhere
-                val armNode = nodes.find { it.id == "arm_commander" }
-                if (armNode != null && checkNodeAvailability(armNode.publishesTo, discoveredTopics)) {
-                    nodeRuntimeStates["arm_commander"] = NodeRuntimeState(detectedOnNetwork = true)
-                    _pipelineState.value = PipelineState.ARM_RUNNING
-                }
-            }
-            PipelineState.ARM_RUNNING -> {
-                // Check if arm topics disappeared
-                val armNode = nodes.find { it.id == "arm_commander" }
-                if (armNode != null && !checkNodeAvailability(armNode.publishesTo, discoveredTopics)) {
-                    // Arm went offline - go back to TARGET_RUNNING
-                    nodeRuntimeStates.remove("arm_commander")
-                    _pipelineState.value = PipelineState.TARGET_RUNNING
-                }
-                // Micro-ROS agent doesn't publish topics, so can't detect
-            }
-            PipelineState.AGENT_RUNNING -> {
-                // Already at final state (micro-ROS agent has no topics to monitor)
-            }
-        }
-    }
-
-    private fun checkNodeAvailability(
-        publishedTopics: List<TopicInfo>,
-        discoveredTopics: Set<String>
-    ): Boolean {
-        return publishedTopics.all { it.name in discoveredTopics }
     }
 
     companion object {

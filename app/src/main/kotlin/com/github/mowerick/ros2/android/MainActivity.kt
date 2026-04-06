@@ -248,7 +248,7 @@ class MainActivity : ComponentActivity(), PermissionHandler, NetworkInterfacePro
                 val networkInterfaces by vm.networkInterfaces.collectAsState()
                 val selectedNetworkInterface by vm.selectedNetworkInterface.collectAsState()
                 val pipelineNodes by vm.pipelineNodes.collectAsState()
-                val isProbing by vm.isProbing.collectAsState()
+                val nodeStates by vm.nodeStates.collectAsState()
                 val cameraFrame by vm.cameraFrame.collectAsState()
                 val activeNotifications by vm.notifications.collectAsState()
                 val perceptionState by vm.perceptionState.collectAsState()
@@ -370,10 +370,12 @@ class MainActivity : ComponentActivity(), PermissionHandler, NetworkInterfacePro
                         onNodeClick = { vm.navigateToNode(it) },
                         onNodeStartStop = { vm.toggleNodeState(it) },
                         isNodeStartable = { vm.isNodeStartable(it) },
-                        isProbing = isProbing,
-                        onToggleProbing = { vm.toggleTopicProbing() },
-                        isRunningLocally = { vm.isNodeRunningLocally(it) },
-                        isDetectedOnNetwork = { vm.isNodeDetectedOnNetwork(it) }
+                        canProbeNode = { vm.canProbeNode(it) },
+                        isNodeProbing = { nodeStates[it]?.isProbing == true },
+                        onToggleNodeProbing = { vm.toggleNodeProbing(it) },
+                        onReset = { vm.resetPipeline() },
+                        isRunningLocally = { nodeStates[it]?.runningLocally == true },
+                        isDetectedOnNetwork = { nodeStates[it]?.detectedOnNetwork == true }
                     )
                     is Screen.NodeDetail -> {
                         val node = pipelineNodes.find { it.id == s.nodeId }

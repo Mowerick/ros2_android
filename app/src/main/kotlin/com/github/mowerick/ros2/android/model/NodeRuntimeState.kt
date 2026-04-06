@@ -21,7 +21,18 @@ data class NodeRuntimeState(
      * Indicates another device is running this node.
      * Disables Start button (can't start what's already running elsewhere).
      */
-    val detectedOnNetwork: Boolean = false
+    val detectedOnNetwork: Boolean = false,
+
+    /**
+     * True if this node is actively probing for topics on the network.
+     */
+    val isProbing: Boolean = false,
+
+    /**
+     * True if all of this node's subscribesTo topics have been discovered.
+     * Indicates upstream node(s) are available and this node can be started.
+     */
+    val upstreamAvailable: Boolean = false
 ) {
     /**
      * True if node is running either locally or detected externally

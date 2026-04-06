@@ -17,6 +17,7 @@ import com.github.mowerick.ros2.android.interfaces.PermissionHandler
 import com.github.mowerick.ros2.android.model.CameraInfo
 import com.github.mowerick.ros2.android.model.ExternalDeviceInfo
 import com.github.mowerick.ros2.android.model.NativeNotification
+import com.github.mowerick.ros2.android.model.NodeRuntimeState
 import com.github.mowerick.ros2.android.model.NodeState
 import com.github.mowerick.ros2.android.model.PipelineNode
 import com.github.mowerick.ros2.android.model.PipelineState
@@ -99,7 +100,7 @@ class RosViewModel(
     val externalDevices: StateFlow<List<ExternalDeviceInfo>> = externalDeviceManager.externalDevices
     val devicesBeingToggled: StateFlow<Set<String>> = externalDeviceManager.devicesBeingToggled
     val pipelineNodes: StateFlow<List<PipelineNode>> = pipelineStateMachine.pipelineNodes
-    val isProbing: StateFlow<Boolean> = pipelineStateMachine.isProbing
+    val nodeStates: StateFlow<Map<String, NodeRuntimeState>> = pipelineStateMachine.nodeStates
     val perceptionState: StateFlow<PerceptionManager.PerceptionState> = perceptionManager.perceptionState
     val debugFrameRgb: StateFlow<Bitmap?> = perceptionManager.debugFrameRgb
     val debugFrameDepth: StateFlow<Bitmap?> = perceptionManager.debugFrameDepth
@@ -308,7 +309,9 @@ class RosViewModel(
     fun isNodeDetectedOnNetwork(nodeId: String) = pipelineStateMachine.isNodeDetectedOnNetwork(nodeId)
     fun toggleNodeState(nodeId: String) = pipelineStateMachine.toggleNodeState(nodeId)
     fun isNodeStartable(nodeId: String) = pipelineStateMachine.isNodeStartable(nodeId)
-    fun toggleTopicProbing() = pipelineStateMachine.toggleTopicProbing()
+    fun canProbeNode(nodeId: String) = pipelineStateMachine.canProbeNode(nodeId)
+    fun toggleNodeProbing(nodeId: String) = pipelineStateMachine.toggleNodeProbing(nodeId)
+    fun resetPipeline() = pipelineStateMachine.resetPipeline()
 
     // -- GPS/Location (stays in ViewModel - tightly coupled) --
 

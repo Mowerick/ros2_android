@@ -3,11 +3,9 @@ package com.github.mowerick.ros2.android.model
 /**
  * Represents the current state of the ROS 2 perception & positioning pipeline.
  *
- * The pipeline is a state machine that progresses sequentially from top to bottom.
+ * The pipeline is a linear state machine with explicit forward/backward transitions.
  * Each state represents which subsystem is currently active and determines which
  * nodes can be started next.
- *
- * State transitions are one-way (forward only), but can roll back on node stop.
  */
 enum class PipelineState {
     /**
@@ -18,7 +16,6 @@ enum class PipelineState {
 
     /**
      * Actively probing for ZED camera topics on the network.
-     * Waiting to discover: /zed/zed_node/rgb, /zed/zed_node/depth, etc.
      */
     ZED_PROBING,
 
@@ -55,9 +52,6 @@ enum class PipelineState {
      */
     AGENT_RUNNING;
 
-    /**
-     * Get human-readable description of this state
-     */
     fun getDescription(): String = when (this) {
         STOPPED -> "Pipeline inactive"
         ZED_PROBING -> "Searching for ZED camera..."
@@ -66,5 +60,20 @@ enum class PipelineState {
         TARGET_RUNNING -> "Target manager active"
         ARM_RUNNING -> "Arm commander active"
         AGENT_RUNNING -> "Full pipeline active"
+    }
+
+    companion object {
+        val stateTransitions: Map<PipelineState, Pair<PipelineState?, PipelineState?>> = mapOf(
+            STOPPED            to Pair(null,                ZED_PROBING),
+            ZED_PROBING        to Pair(STOPPED,             ZED_AVAILABLE),
+            ZED_AVAILABLE      to Pair(ZED_PROBING,         DETECTION_RUNNING),
+            DETECTION_RUNNING  to Pair(ZED_AVAILABLE,       TARGET_RUNNING),
+            TARGET_RUNNING     to Pair(DETECTION_RUNNING,   ARM_RUNNING),
+            ARM_RUNNING        to Pair(TARGET_RUNNING,      AGENT_RUNNING),
+            AGENT_RUNNING      to Pair(ARM_RUNNING,         null),
+        )
+
+        fun nextState(current: PipelineState): PipelineState? = stateTransitions[current]?.second
+        fun previousState(current: PipelineState): PipelineState? = stateTransitions[current]?.first
     }
 }

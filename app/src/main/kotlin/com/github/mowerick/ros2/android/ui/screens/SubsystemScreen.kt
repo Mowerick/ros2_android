@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -28,8 +29,10 @@ fun SubsystemScreen(
     onNodeClick: (PipelineNode) -> Unit,
     onNodeStartStop: (String) -> Unit,
     isNodeStartable: (String) -> Boolean,
-    isProbing: Boolean,
-    onToggleProbing: () -> Unit,
+    canProbeNode: (String) -> Boolean,
+    isNodeProbing: (String) -> Boolean,
+    onToggleNodeProbing: (String) -> Unit,
+    onReset: () -> Unit,
     isRunningLocally: (String) -> Boolean = { false },
     isDetectedOnNetwork: (String) -> Boolean = { false }
 ) {
@@ -40,6 +43,11 @@ fun SubsystemScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = onReset) {
+                        Icon(Icons.Filled.Refresh, contentDescription = "Reset Pipeline")
                     }
                 }
             )
@@ -56,10 +64,11 @@ fun SubsystemScreen(
                 PipelineNodeCard(
                     node = node,
                     canStart = isNodeStartable(node.id),
+                    canProbe = canProbeNode(node.id),
                     onStartStop = { onNodeStartStop(node.id) },
                     onClick = { onNodeClick(node) },
-                    onProbe = if (node.isExternal) onToggleProbing else null,
-                    isProbing = node.isExternal && isProbing,
+                    onProbe = { onToggleNodeProbing(node.id) },
+                    isProbing = isNodeProbing(node.id),
                     runningLocally = isRunningLocally(node.id),
                     detectedOnNetwork = isDetectedOnNetwork(node.id)
                 )

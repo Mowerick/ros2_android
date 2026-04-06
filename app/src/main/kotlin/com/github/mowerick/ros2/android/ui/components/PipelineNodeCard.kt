@@ -36,6 +36,7 @@ import com.github.mowerick.ros2.android.model.PipelineNode
 fun PipelineNodeCard(
     node: PipelineNode,
     canStart: Boolean,
+    canProbe: Boolean,
     onStartStop: () -> Unit,
     onClick: () -> Unit,
     onProbe: (() -> Unit)? = null,
@@ -43,12 +44,12 @@ fun PipelineNodeCard(
     runningLocally: Boolean = false,
     detectedOnNetwork: Boolean = false
 ) {
-    val isDisabled = !canStart && !runningLocally && !detectedOnNetwork && !node.isExternal
+    val isDisabled = !canStart && !canProbe && !runningLocally && !detectedOnNetwork
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clickable(enabled = !isDisabled, onClick = onClick)
             .alpha(if (isDisabled) 0.5f else 1f),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         colors = if (node.isExternal) CardDefaults.cardColors(
@@ -112,10 +113,9 @@ fun PipelineNodeCard(
                 )
             }
 
-            // Button logic based on node type and runtime state
-            if (node.isExternal && onProbe != null) {
-                // External hardware: show probe button
-                OutlinedButton(onClick = onProbe) {
+            // Probe button - shown for all nodes, disabled if FSM doesn't allow it
+            if (onProbe != null) {
+                OutlinedButton(onClick = onProbe, enabled = canProbe) {
                     if (isProbing) {
                         val transition = rememberInfiniteTransition(label = "probe")
                         val rotation by transition.animateFloat(
@@ -156,11 +156,12 @@ fun PipelineNodeCard(
                         style = MaterialTheme.typography.labelMedium
                     )
                 }
-            } else if (!node.isExternal) {
-                // Internal node logic
+            }
+
+            // Start/Stop button - non-external nodes only
+            if (!node.isExternal) {
                 when {
                     detectedOnNetwork -> {
-                        // Running elsewhere - no button
                         Text(
                             text = "Running on another device",
                             style = MaterialTheme.typography.bodySmall,
@@ -168,13 +169,11 @@ fun PipelineNodeCard(
                         )
                     }
                     runningLocally -> {
-                        // Running locally - show stop button
                         OutlinedButton(onClick = onStartStop) {
                             Text("Stop")
                         }
                     }
                     else -> {
-                        // Not running - show start button (enabled/disabled based on upstream)
                         Button(
                             onClick = onStartStop,
                             enabled = canStart
