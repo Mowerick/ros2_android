@@ -59,6 +59,11 @@ object NativeBridge {
     external fun disablePerception()
     external fun isPerceptionEnabled(): Boolean
 
+    // Target Manager management
+    external fun enableTargetManager()
+    external fun disableTargetManager()
+    external fun isTargetManagerEnabled(): Boolean
+
     // Perception debug visualization
     external fun nativeEnablePerceptionVisualization(enable: Boolean)
     external fun nativeGetDebugFrame(frameId: String): Bitmap?

@@ -51,7 +51,11 @@ class PipelineStateMachine(
         if (node.isExternal) return false
         val state = _nodeStates.value[nodeId]
         if (state?.runningLocally == true || state?.detectedOnNetwork == true) return false
-        return state?.upstreamAvailable == true
+
+        // Check if upstream node is active (locally or on network)
+        val upstreamId = node.upstreamNodeId ?: return false
+        val upstreamState = _nodeStates.value[upstreamId]
+        return upstreamState?.runningLocally == true || upstreamState?.detectedOnNetwork == true
     }
 
     fun isNodeRunningLocally(nodeId: String): Boolean {
@@ -75,16 +79,18 @@ class PipelineStateMachine(
         val state = _nodeStates.value[nodeId]
         // Allow stopping an active probe
         if (state?.isProbing == true) return true
-        // Can't probe if already running
-        if (state?.runningLocally == true || state?.detectedOnNetwork == true) return false
+        // Can't probe if already running locally
+        if (state?.runningLocally == true) return false
 
         // Check if the pipeline FSM is in the correct state for this node to probe
         return when (nodeId) {
-            "zed_stereo_node" -> _pipelineState.value in listOf(PipelineState.STOPPED, PipelineState.ZED_PROBING)
-            "object_detection" -> _pipelineState.value == PipelineState.ZED_AVAILABLE
-            "target_manager" -> _pipelineState.value == PipelineState.DETECTION_RUNNING
-            "arm_commander" -> _pipelineState.value == PipelineState.TARGET_RUNNING
-            "micro_ros_agent" -> _pipelineState.value == PipelineState.ARM_RUNNING
+            "zed_stereo_node" -> _pipelineState.value in listOf(
+                PipelineState.STOPPED, PipelineState.ZED_PROBING, PipelineState.ZED_AVAILABLE
+            )
+            "object_detection" -> _pipelineState.value >= PipelineState.ZED_AVAILABLE
+            "target_manager" -> _pipelineState.value >= PipelineState.DETECTION_RUNNING
+            "arm_commander" -> _pipelineState.value >= PipelineState.TARGET_RUNNING
+            "micro_ros_agent" -> _pipelineState.value >= PipelineState.ARM_RUNNING
             else -> false
         }
     }
@@ -102,7 +108,9 @@ class PipelineStateMachine(
                             onPerceptionStateChange(true)
                         }
                     }
-                    "target_manager" -> { /* TODO: Implement target manager start */ }
+                    "target_manager" -> {
+                        NativeBridge.enableTargetManager()
+                    }
                     "arm_commander" -> { /* TODO: Implement arm commander start */ }
                     "micro_ros_agent" -> { /* TODO: Implement micro-ROS agent start */ }
                 }
@@ -130,7 +138,11 @@ class PipelineStateMachine(
                             onPerceptionStateChange(false)
                         }
                     }
-                    "target_manager" -> { /* TODO: Implement target manager stop */ }
+                    "target_manager" -> {
+                        if (_nodeStates.value["target_manager"]?.runningLocally == true) {
+                            NativeBridge.disableTargetManager()
+                        }
+                    }
                     "arm_commander" -> { /* TODO: Implement arm commander stop */ }
                     "micro_ros_agent" -> { /* TODO: Implement micro-ROS agent stop */ }
                 }
@@ -168,7 +180,7 @@ class PipelineStateMachine(
             if (state.runningLocally) {
                 when (nodeId) {
                     "object_detection" -> NativeBridge.disablePerception()
-                    // TODO: Add other node stop calls
+                    "target_manager" -> NativeBridge.disableTargetManager()
                 }
             }
         }
@@ -193,7 +205,7 @@ class PipelineStateMachine(
                 advanceState()
             }
         } else {
-            // Stop probing - keep upstreamAvailable and detectedOnNetwork intact
+            // Stop probing - keep detectedOnNetwork intact
             // (they reflect actual topic presence, managed by evaluateAllNodes)
             updateNodeState(nodeId) { it.copy(isProbing = false) }
             // Rollback from ZED_PROBING to STOPPED when no nodes are probing
@@ -263,23 +275,21 @@ class PipelineStateMachine(
 
     private fun evaluateAllNodes(discoveredTopics: Set<String>) {
         for (node in _pipelineNodes.value) {
-            val wasUpstreamAvailable = _nodeStates.value[node.id]?.upstreamAvailable == true
+            val state = _nodeStates.value[node.id] ?: continue
 
-            val upstreamAvailable = node.subscribesTo.isEmpty() ||
-                node.subscribesTo.all { it.name in discoveredTopics }
+            // Only evaluate nodes that are actively probing
+            if (!state.isProbing) continue
 
-            // Only update upstreamAvailable - detectedOnNetwork is managed
-            // exclusively by the advancement logic below (based on downstream
-            // node's subscribesTo, not this node's publishesTo)
-            updateNodeState(node.id) { it.copy(upstreamAvailable = upstreamAvailable) }
+            // Skip nodes with no publishesTo (e.g., micro_ros_agent)
+            if (node.publishesTo.isEmpty()) continue
 
-            // Advance when a node's subscribesTo topics are newly discovered
-            // This means the upstream node is providing what this node needs
-            if (upstreamAvailable && !wasUpstreamAvailable && node.subscribesTo.isNotEmpty()) {
-                node.upstreamNodeId?.let { upstreamId ->
-                    updateNodeState(upstreamId) { it.copy(detectedOnNetwork = true, isProbing = false) }
-                }
-                android.util.Log.d("PipelineStateMachine", "upstream available for ${node.id}, advancing state")
+            // Check if this node's own published topics are on the network
+            val allPubTopicsFound = node.publishesTo.all { it.name in discoveredTopics }
+
+            if (allPubTopicsFound && !state.detectedOnNetwork) {
+                updateNodeState(node.id) { it.copy(detectedOnNetwork = true, isProbing = false) }
+                android.util.Log.d("PipelineStateMachine",
+                    "${node.id} detected on network, advancing state")
                 advanceState()
             }
         }
@@ -297,7 +307,7 @@ class PipelineStateMachine(
             if (_nodeStates.value[downstream]?.runningLocally == true) {
                 when (downstream) {
                     "object_detection" -> NativeBridge.disablePerception()
-                    // TODO: Add other node stop calls
+                    "target_manager" -> NativeBridge.disableTargetManager()
                 }
                 removeNodeState(downstream)
             }
@@ -346,7 +356,7 @@ class PipelineStateMachine(
                 description = "Selects primary targets (CPB eggs) and performs IMU-based orientation calibration for laser positioning. Computes pan/tilt commands with offset correction.",
                 subscribesTo = listOf(
                     TopicInfo("/cpb_eggs_center", "geometry_msgs/msg/Point"),
-                    TopicInfo("/zed/zed_node/imu/data", "sensor_msgs/msg/Imu")
+                     TopicInfo("/zed/zed_node/imu/data", "sensor_msgs/msg/Imu")
                 ),
                 publishesTo = listOf(
                     TopicInfo("/arm_position_goal", "std_msgs/msg/Float32MultiArray")

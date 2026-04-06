@@ -26,13 +26,7 @@ data class NodeRuntimeState(
     /**
      * True if this node is actively probing for topics on the network.
      */
-    val isProbing: Boolean = false,
-
-    /**
-     * True if all of this node's subscribesTo topics have been discovered.
-     * Indicates upstream node(s) are available and this node can be started.
-     */
-    val upstreamAvailable: Boolean = false
+    val isProbing: Boolean = false
 ) {
     /**
      * True if node is running either locally or detected externally
