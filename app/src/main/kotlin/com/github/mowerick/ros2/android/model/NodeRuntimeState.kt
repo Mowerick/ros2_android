@@ -26,7 +26,12 @@ data class NodeRuntimeState(
     /**
      * True if this node is actively probing for topics on the network.
      */
-    val isProbing: Boolean = false
+    val isProbing: Boolean = false,
+
+    /**
+     * True while native initialization is in progress (between start click and native call return).
+     */
+    val isStarting: Boolean = false
 ) {
     /**
      * True if node is running either locally or detected externally

@@ -375,7 +375,8 @@ class MainActivity : ComponentActivity(), PermissionHandler, NetworkInterfacePro
                         onToggleNodeProbing = { vm.toggleNodeProbing(it) },
                         onReset = { vm.resetPipeline() },
                         isRunningLocally = { nodeStates[it]?.runningLocally == true },
-                        isDetectedOnNetwork = { nodeStates[it]?.detectedOnNetwork == true }
+                        isDetectedOnNetwork = { nodeStates[it]?.detectedOnNetwork == true },
+                        isNodeStarting = { nodeStates[it]?.isStarting == true }
                     )
                     is Screen.NodeDetail -> {
                         val node = pipelineNodes.find { it.id == s.nodeId }

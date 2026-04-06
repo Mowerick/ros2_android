@@ -66,6 +66,10 @@ class PipelineStateMachine(
         return _nodeStates.value[nodeId]?.detectedOnNetwork == true
     }
 
+    fun isNodeStarting(nodeId: String): Boolean {
+        return _nodeStates.value[nodeId]?.isStarting == true
+    }
+
     fun getNodeDisplayState(nodeId: String): NodeState {
         val state = _nodeStates.value[nodeId]
         return if (state?.isRunning == true) NodeState.Running else NodeState.Stopped
@@ -98,6 +102,7 @@ class PipelineStateMachine(
     // -- Node lifecycle --
 
     fun startNode(nodeId: String) {
+        updateNodeState(nodeId) { it.copy(isStarting = true) }
         coroutineScope.launch(Dispatchers.IO) {
             try {
                 when (nodeId) {
@@ -114,10 +119,11 @@ class PipelineStateMachine(
                     "arm_commander" -> { /* TODO: Implement arm commander start */ }
                     "micro_ros_agent" -> { /* TODO: Implement micro-ROS agent start */ }
                 }
-                updateNodeState(nodeId) { it.copy(runningLocally = true, isProbing = false) }
+                updateNodeState(nodeId) { it.copy(runningLocally = true, isProbing = false, isStarting = false) }
                 advanceState()
                 updatePolling()
             } catch (e: Exception) {
+                updateNodeState(nodeId) { it.copy(isStarting = false) }
                 android.util.Log.e("PipelineStateMachine", "Failed to start node $nodeId", e)
                 withContext(Dispatchers.Main) {
                     onError("Failed to start $nodeId: ${e.message}")

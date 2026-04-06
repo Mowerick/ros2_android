@@ -42,7 +42,8 @@ fun PipelineNodeCard(
     onProbe: (() -> Unit)? = null,
     isProbing: Boolean = false,
     runningLocally: Boolean = false,
-    detectedOnNetwork: Boolean = false
+    detectedOnNetwork: Boolean = false,
+    isStarting: Boolean = false
 ) {
     val isDisabled = !canStart && !canProbe && !runningLocally && !detectedOnNetwork
 
@@ -176,7 +177,7 @@ fun PipelineNodeCard(
                     else -> {
                         Button(
                             onClick = onStartStop,
-                            enabled = canStart
+                            enabled = canStart && !isStarting
                         ) {
                             Text(
                                 if (canStart) "Start"
