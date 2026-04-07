@@ -90,7 +90,6 @@ class TargetManagerController : public SensorDataProvider {
   float tilt_offset_ = 0.0f;
   float pan_offset_ = 0.0f;
   std::optional<std::pair<float, float>> imu_orientation_;
-  int calibration_ticks_ = 0;
 
   // Last target tracking
   std::array<float, 2> last_fixed_position_ = {0.0f, 0.0f};

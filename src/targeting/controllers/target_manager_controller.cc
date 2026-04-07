@@ -29,9 +29,6 @@ constexpr float kShootingTimeMs = 1000.0f;
 // State machine tick rate
 constexpr int kTimerMs = 100;
 
-// Calibration timeout: skip after this many ticks without IMU data
-constexpr int kCalibrationTimeoutTicks = 50;  // 5 seconds
-
 // Epsilon for atan2 denominator
 constexpr float kEpsilon = 0.00001f;
 
@@ -162,7 +159,6 @@ void TargetManagerController::Enable() {
     tilt_offset_ = 0.0f;
     pan_offset_ = 0.0f;
     imu_orientation_.reset();
-    calibration_ticks_ = 0;
     last_fixed_position_ = {0.0f, 0.0f};
   }
 
@@ -271,11 +267,6 @@ void TargetManagerController::OnFixedPosition(
   float pan = msg->data[0];
   float tilt = msg->data[1];
 
-  if (!std::isfinite(pan) || !std::isfinite(tilt)) {
-    LOGW("Invalid fixed position data (NaN/Inf)");
-    return;
-  }
-
   if (last_fixed_position_[0] == pan && last_fixed_position_[1] == tilt) {
     return;  // No change
   }
@@ -301,12 +292,10 @@ void TargetManagerController::StateMachineCallback() {
     case TargetManagerState::INIT:
       LOGI("Entering calibration state");
       state_ = TargetManagerState::CALIBRATING;
-      calibration_ticks_ = 0;
       ReturnToZero();
       break;
 
     case TargetManagerState::CALIBRATING:
-      calibration_ticks_++;
       if (Calibrate()) {
         if (fixed_position_mode_) {
           state_ = TargetManagerState::FIXED_POSITION_MODE;
@@ -314,17 +303,6 @@ void TargetManagerController::StateMachineCallback() {
         } else {
           state_ = TargetManagerState::READY;
           LOGI("Entering ready state");
-        }
-      } else if (calibration_ticks_ >= kCalibrationTimeoutTicks &&
-                 !imu_orientation_.has_value()) {
-        LOGW("Calibration timeout - no IMU data after %d ticks, skipping",
-             calibration_ticks_);
-        PostNotification(NotificationSeverity::WARNING,
-                         "IMU calibration skipped - no IMU data received");
-        if (fixed_position_mode_) {
-          state_ = TargetManagerState::FIXED_POSITION_MODE;
-        } else {
-          state_ = TargetManagerState::READY;
         }
       }
       break;
