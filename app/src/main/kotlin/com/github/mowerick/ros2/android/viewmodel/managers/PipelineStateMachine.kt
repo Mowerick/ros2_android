@@ -116,7 +116,7 @@ class PipelineStateMachine(
                     "target_manager" -> {
                         NativeBridge.enableTargetManager()
                     }
-                    "arm_commander" -> { /* TODO: Implement arm commander start */ }
+                    "arm_commander" -> { NativeBridge.enableArmCommander() }
                     "micro_ros_agent" -> { /* TODO: Implement micro-ROS agent start */ }
                 }
                 updateNodeState(nodeId) { it.copy(runningLocally = true, isProbing = false, isStarting = false) }
@@ -132,7 +132,7 @@ class PipelineStateMachine(
                     if (peerState?.runningLocally != true && peerState?.detectedOnNetwork != true) {
                         updateNodeState(peerNodeId) { it.copy(isStarting = true) }
                         when (peerNodeId) {
-                            "arm_commander" -> { /* TODO: Implement arm commander start */ }
+                            "arm_commander" -> { NativeBridge.enableArmCommander() }
                             "micro_ros_agent" -> { /* TODO: Implement micro-ROS agent start */ }
                         }
                         updateNodeState(peerNodeId) { it.copy(runningLocally = true, isProbing = false, isStarting = false) }
@@ -168,7 +168,7 @@ class PipelineStateMachine(
                             NativeBridge.disableTargetManager()
                         }
                     }
-                    "arm_commander" -> { /* TODO: Implement arm commander stop */ }
+                    "arm_commander" -> { NativeBridge.disableArmCommander() }
                     "micro_ros_agent" -> { /* TODO: Implement micro-ROS agent stop */ }
                 }
 
@@ -182,7 +182,7 @@ class PipelineStateMachine(
                     val peerState = _nodeStates.value[peerNodeId]
                     if (peerState?.runningLocally == true) {
                         when (peerNodeId) {
-                            "arm_commander" -> { /* TODO: Implement arm commander stop */ }
+                            "arm_commander" -> { NativeBridge.disableArmCommander() }
                             "micro_ros_agent" -> { /* TODO: Implement micro-ROS agent stop */ }
                         }
                     }
