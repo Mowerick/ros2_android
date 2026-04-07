@@ -393,7 +393,8 @@ class MainActivity : ComponentActivity(), PermissionHandler, NetworkInterfacePro
                                 debugFrameDepth = debugFrameDepth,
                                 onEnableVisualization = { vm.enableVisualization() },
                                 onDisableVisualization = { vm.disableVisualization() },
-                                onFullscreenClick = { vm.navigateToDebugFullscreen() }
+                                onFullscreenClick = { vm.navigateToDebugFullscreen() },
+                                isNodeStarting = { nodeStates[it]?.isStarting == true }
                             )
                         }
                     }

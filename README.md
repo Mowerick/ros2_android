@@ -439,20 +439,26 @@ make clean-app
 make clean-native
 ```
 
-### Native Stack Traces
+### Helpful commands for testing
 
-Symbolicate native crashes using ndk-stack:
+Publish imu data if not available
 
 ```bash
-adb logcat | $ANDROID_HOME/ndk/*/ndk-stack -sym build/jniLibs/arm64-v8a/
+ros2 topic pub /zed/zed_node/imu/data sensor_msgs/msg/Imu "{
+  header: {
+    stamp: {sec: 0, nanosec: 0},
+    frame_id: 'hello_world'
+  },
+  orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0},
+  angular_velocity: {x: 0.0, y: 0.0, z: 0.0},
+  linear_acceleration: {x: 0.0, y: 0.0, z: 0.0}
+}"
 ```
 
-### Granting Permissions
-
-Grant a permission without the request dialog (app must be installed but not running):
+Publish explicit topic from rosbag
 
 ```bash
-adb shell pm grant com.github.mowerick.ros2.android android.permission.CAMERA
+ros2 bag play . --topic /zed/zed_node/rgb/image_rect_color/compressed
 ```
 
 ### Quick ROS 2 Network Setup

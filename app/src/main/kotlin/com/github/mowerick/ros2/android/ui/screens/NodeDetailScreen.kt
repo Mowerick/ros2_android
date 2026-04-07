@@ -55,7 +55,8 @@ fun NodeDetailScreen(
     debugFrameDepth: Bitmap? = null,
     onEnableVisualization: () -> Unit = {},
     onDisableVisualization: () -> Unit = {},
-    onFullscreenClick: () -> Unit = {}
+    onFullscreenClick: () -> Unit = {},
+    isNodeStarting: (String) -> Boolean = { false }
 ) {
     Scaffold(
         topBar = {
@@ -105,7 +106,7 @@ fun NodeDetailScreen(
                             else -> {
                                 Button(
                                     onClick = onStartStop,
-                                    enabled = canStart,
+                                    enabled = canStart && !isNodeStarting(node.id),
                                     modifier = Modifier.height(40.dp)
                                 ) {
                                     Text(if (canStart) "Start Node" else "Waiting for upstream")
