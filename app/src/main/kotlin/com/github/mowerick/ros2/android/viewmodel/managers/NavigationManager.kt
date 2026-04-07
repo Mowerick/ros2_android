@@ -57,6 +57,10 @@ class NavigationManager(initialScreen: Screen = Screen.Dashboard) {
         navigateTo(Screen.NodeDetail(node.id))
     }
 
+    fun navigateToCommandBridge() {
+        navigateTo(Screen.CommandBridge)
+    }
+
     fun navigateToDebugFullscreen() {
         navigateTo(Screen.DebugVisualizationFullscreen)
     }

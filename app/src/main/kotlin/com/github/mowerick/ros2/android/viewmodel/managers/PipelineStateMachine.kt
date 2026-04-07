@@ -121,25 +121,10 @@ class PipelineStateMachine(
                 }
                 updateNodeState(nodeId) { it.copy(runningLocally = true, isProbing = false, isStarting = false) }
 
-                // Co-dependent pair: start the peer node automatically
-                val peerNodeId = when (nodeId) {
-                    "arm_commander" -> "micro_ros_agent"
-                    "micro_ros_agent" -> "arm_commander"
-                    else -> null
+                // Only advance FSM if not already at COMMAND_ACTIVE
+                if (_pipelineState.value != PipelineState.COMMAND_ACTIVE) {
+                    advanceState()
                 }
-                if (peerNodeId != null) {
-                    val peerState = _nodeStates.value[peerNodeId]
-                    if (peerState?.runningLocally != true && peerState?.detectedOnNetwork != true) {
-                        updateNodeState(peerNodeId) { it.copy(isStarting = true) }
-                        when (peerNodeId) {
-                            "arm_commander" -> { NativeBridge.enableArmCommander() }
-                            "micro_ros_agent" -> { /* TODO: Implement micro-ROS agent start */ }
-                        }
-                        updateNodeState(peerNodeId) { it.copy(runningLocally = true, isProbing = false, isStarting = false) }
-                    }
-                }
-
-                advanceState()
                 updatePolling()
             } catch (e: Exception) {
                 updateNodeState(nodeId) { it.copy(isStarting = false) }
@@ -172,26 +157,17 @@ class PipelineStateMachine(
                     "micro_ros_agent" -> { /* TODO: Implement micro-ROS agent stop */ }
                 }
 
-                // Co-dependent pair: stop the peer node automatically
-                val peerNodeId = when (nodeId) {
-                    "arm_commander" -> "micro_ros_agent"
-                    "micro_ros_agent" -> "arm_commander"
-                    else -> null
-                }
-                if (peerNodeId != null) {
-                    val peerState = _nodeStates.value[peerNodeId]
-                    if (peerState?.runningLocally == true) {
-                        when (peerNodeId) {
-                            "arm_commander" -> { NativeBridge.disableArmCommander() }
-                            "micro_ros_agent" -> { /* TODO: Implement micro-ROS agent stop */ }
-                        }
-                    }
-                    removeNodeState(peerNodeId)
-                }
-
                 stopDownstreamNodes(nodeId)
                 removeNodeState(nodeId)
-                rollbackState()
+
+                // Only rollback FSM if both command bridge nodes are stopped
+                val armState = _nodeStates.value["arm_commander"]
+                val agentState = _nodeStates.value["micro_ros_agent"]
+                val armActive = armState?.runningLocally == true || armState?.detectedOnNetwork == true
+                val agentActive = agentState?.runningLocally == true || agentState?.detectedOnNetwork == true
+                if (!armActive && !agentActive) {
+                    rollbackState()
+                }
                 updatePolling()
             } catch (e: Exception) {
                 android.util.Log.e("PipelineStateMachine", "Failed to stop node $nodeId", e)
@@ -429,7 +405,7 @@ class PipelineStateMachine(
             PipelineNode(
                 id = "micro_ros_agent",
                 name = "micro-ROS Agent",
-                description = "Bridges ROS 2 DDS network to Zephyr microcontroller via USB serial (921600 baud). Forwards /PointNShoot commands to pan/tilt arm MCU. Investigation - may require external PC.",
+                description = "Bridges ROS 2 DDS network to Zephyr microcontroller via USB serial (115200 baud). Forwards /PointNShoot commands to pan/tilt arm MCU. Investigation - may require external PC.",
                 subscribesTo = listOf(
                     TopicInfo("/PointNShoot", "std_msgs/msg/Float32MultiArray")
                 ),
