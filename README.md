@@ -129,7 +129,7 @@ ZED Camera (External) → Object Detection (Android) → Target Manager → Arm 
 
 ```
 STOPPED → ZED_PROBING → ZED_AVAILABLE → DETECTION_RUNNING →
-TARGET_RUNNING → ARM_RUNNING → AGENT_RUNNING
+TARGET_RUNNING → COMMAND_ACTIVE
 ```
 
 ### Object Detection Node
@@ -204,7 +204,7 @@ The pipeline supports distributed deployment across multiple Android devices or 
 
 **State machine implementation:**
 
-- Pipeline state stored as enum: `PipelineState` (STOPPED → AGENT_RUNNING)
+- Pipeline state stored as enum: `PipelineState` (STOPPED → COMMAND_ACTIVE)
 - Node runtime tracking: `NodeRuntimeState` (runningLocally, detectedOnNetwork)
 - Topic probing drives state transitions automatically
 - One-way progression with rollback on node stop (cascades to downstream)

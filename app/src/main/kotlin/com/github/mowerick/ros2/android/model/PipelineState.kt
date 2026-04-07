@@ -40,17 +40,12 @@ enum class PipelineState {
     TARGET_RUNNING,
 
     /**
-     * Arm commander is running (locally or on another device).
-     * Publishes: /PointNShoot, /arm_position_feedback
-     * Micro-ROS agent can now be started.
+     * Arm commander and micro-ROS agent running as co-dependent pair.
+     * Bidirectional data flow: arm_commander publishes /PointNShoot,
+     * micro-ROS agent bridges to microcontroller which publishes
+     * /PointNShoot_ACK, _DONE, _NACK feedback back to arm_commander.
      */
-    ARM_RUNNING,
-
-    /**
-     * Full pipeline active - micro-ROS agent running.
-     * Forwards commands to pan/tilt microcontroller via USB serial.
-     */
-    AGENT_RUNNING;
+    COMMAND_ACTIVE;
 
     fun getDescription(): String = when (this) {
         STOPPED -> "Pipeline inactive"
@@ -58,8 +53,7 @@ enum class PipelineState {
         ZED_AVAILABLE -> "ZED camera available"
         DETECTION_RUNNING -> "Object detection active"
         TARGET_RUNNING -> "Target manager active"
-        ARM_RUNNING -> "Arm commander active"
-        AGENT_RUNNING -> "Full pipeline active"
+        COMMAND_ACTIVE -> "Full pipeline active"
     }
 
     companion object {
@@ -68,9 +62,8 @@ enum class PipelineState {
             ZED_PROBING        to Pair(STOPPED,             ZED_AVAILABLE),
             ZED_AVAILABLE      to Pair(ZED_PROBING,         DETECTION_RUNNING),
             DETECTION_RUNNING  to Pair(ZED_AVAILABLE,       TARGET_RUNNING),
-            TARGET_RUNNING     to Pair(DETECTION_RUNNING,   ARM_RUNNING),
-            ARM_RUNNING        to Pair(TARGET_RUNNING,      AGENT_RUNNING),
-            AGENT_RUNNING      to Pair(ARM_RUNNING,         null),
+            TARGET_RUNNING     to Pair(DETECTION_RUNNING,   COMMAND_ACTIVE),
+            COMMAND_ACTIVE     to Pair(TARGET_RUNNING,      null),
         )
 
         fun nextState(current: PipelineState): PipelineState? = stateTransitions[current]?.second

@@ -94,7 +94,7 @@ class PipelineStateMachine(
             "object_detection" -> _pipelineState.value >= PipelineState.ZED_AVAILABLE
             "target_manager" -> _pipelineState.value >= PipelineState.DETECTION_RUNNING
             "arm_commander" -> _pipelineState.value >= PipelineState.TARGET_RUNNING
-            "micro_ros_agent" -> _pipelineState.value >= PipelineState.ARM_RUNNING
+            "micro_ros_agent" -> _pipelineState.value >= PipelineState.TARGET_RUNNING
             else -> false
         }
     }
@@ -120,6 +120,25 @@ class PipelineStateMachine(
                     "micro_ros_agent" -> { /* TODO: Implement micro-ROS agent start */ }
                 }
                 updateNodeState(nodeId) { it.copy(runningLocally = true, isProbing = false, isStarting = false) }
+
+                // Co-dependent pair: start the peer node automatically
+                val peerNodeId = when (nodeId) {
+                    "arm_commander" -> "micro_ros_agent"
+                    "micro_ros_agent" -> "arm_commander"
+                    else -> null
+                }
+                if (peerNodeId != null) {
+                    val peerState = _nodeStates.value[peerNodeId]
+                    if (peerState?.runningLocally != true && peerState?.detectedOnNetwork != true) {
+                        updateNodeState(peerNodeId) { it.copy(isStarting = true) }
+                        when (peerNodeId) {
+                            "arm_commander" -> { /* TODO: Implement arm commander start */ }
+                            "micro_ros_agent" -> { /* TODO: Implement micro-ROS agent start */ }
+                        }
+                        updateNodeState(peerNodeId) { it.copy(runningLocally = true, isProbing = false, isStarting = false) }
+                    }
+                }
+
                 advanceState()
                 updatePolling()
             } catch (e: Exception) {
@@ -151,6 +170,23 @@ class PipelineStateMachine(
                     }
                     "arm_commander" -> { /* TODO: Implement arm commander stop */ }
                     "micro_ros_agent" -> { /* TODO: Implement micro-ROS agent stop */ }
+                }
+
+                // Co-dependent pair: stop the peer node automatically
+                val peerNodeId = when (nodeId) {
+                    "arm_commander" -> "micro_ros_agent"
+                    "micro_ros_agent" -> "arm_commander"
+                    else -> null
+                }
+                if (peerNodeId != null) {
+                    val peerState = _nodeStates.value[peerNodeId]
+                    if (peerState?.runningLocally == true) {
+                        when (peerNodeId) {
+                            "arm_commander" -> { /* TODO: Implement arm commander stop */ }
+                            "micro_ros_agent" -> { /* TODO: Implement micro-ROS agent stop */ }
+                        }
+                    }
+                    removeNodeState(peerNodeId)
                 }
 
                 stopDownstreamNodes(nodeId)
@@ -286,7 +322,7 @@ class PipelineStateMachine(
             // Only evaluate nodes that are actively probing
             if (!state.isProbing) continue
 
-            // Skip nodes with no publishesTo (e.g., micro_ros_agent)
+            // Skip nodes with no publishesTo
             if (node.publishesTo.isEmpty()) continue
 
             // Check if this node's own published topics are on the network
@@ -305,7 +341,6 @@ class PipelineStateMachine(
         val downstreamOrder = when (nodeId) {
             "object_detection" -> listOf("target_manager", "arm_commander", "micro_ros_agent")
             "target_manager" -> listOf("arm_commander", "micro_ros_agent")
-            "arm_commander" -> listOf("micro_ros_agent")
             else -> emptyList()
         }
 
@@ -365,7 +400,8 @@ class PipelineStateMachine(
                 description = "Selects primary targets (CPB eggs) and performs IMU-based orientation calibration for laser positioning. Computes pan/tilt commands with offset correction.",
                 subscribesTo = listOf(
                     TopicInfo("/cpb_eggs_center", "geometry_msgs/msg/Point"),
-                     TopicInfo("/zed/zed_node/imu/data", "sensor_msgs/msg/Imu")
+                    TopicInfo("/zed/zed_node/imu/data", "sensor_msgs/msg/Imu"),
+                    TopicInfo("/arm_position_feedback", "std_msgs/msg/String")
                 ),
                 publishesTo = listOf(
                     TopicInfo("/arm_position_goal", "std_msgs/msg/Float32MultiArray")
@@ -397,8 +433,12 @@ class PipelineStateMachine(
                 subscribesTo = listOf(
                     TopicInfo("/PointNShoot", "std_msgs/msg/Float32MultiArray")
                 ),
-                publishesTo = emptyList(),
-                upstreamNodeId = "arm_commander",
+                publishesTo = listOf(
+                    TopicInfo("/PointNShoot_ACK", "std_msgs/msg/Float32"),
+                    TopicInfo("/PointNShoot_DONE", "std_msgs/msg/Float32"),
+                    TopicInfo("/PointNShoot_NACK", "std_msgs/msg/Float32")
+                ),
+                upstreamNodeId = "target_manager",
                 isExternal = false
             )
         )
