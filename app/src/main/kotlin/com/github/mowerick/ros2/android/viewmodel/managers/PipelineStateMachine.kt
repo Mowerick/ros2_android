@@ -199,6 +199,7 @@ class PipelineStateMachine(
                 when (nodeId) {
                     "object_detection" -> NativeBridge.disablePerception()
                     "target_manager" -> NativeBridge.disableTargetManager()
+                    "arm_commander" -> NativeBridge.disableArmCommander()
                 }
             }
         }
