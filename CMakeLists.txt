@@ -62,6 +62,7 @@ ExternalProject_Add(ros_for_android
   deps-sensor_msgs
   deps-libyuv
   deps-ros2_android_perception
+  deps-micro-xrce-dds-agent
   CMAKE_ARGS
   ${android_cmake_args}
   "-DCMAKE_FIND_ROOT_PATH=${CMAKE_CURRENT_BINARY_DIR}/deps"

@@ -28,6 +28,7 @@
 #include "perception/controllers/perception_controller.h"
 #include "arm_commander/controllers/arm_commander_controller.h"
 #include "targeting/controllers/target_manager_controller.h"
+#include "microros_agent/controllers/microros_agent_controller.h"
 #include "ros/ros_interface.h"
 #include <core/serial/serial.h>
 #include "sensors/base/sensor_data_provider.h"
@@ -232,6 +233,18 @@ public:
       }
       perception_controller_.reset();
       LOGI("Cleanup: Perception controller cleared");
+    }
+
+    // Clear micro-ROS Agent controller (stop before arm commander)
+    if (micro_ros_agent_controller_)
+    {
+      LOGI("Cleanup: Disabling micro-ROS Agent controller");
+      if (micro_ros_agent_controller_->IsEnabled())
+      {
+        micro_ros_agent_controller_->Disable();
+      }
+      micro_ros_agent_controller_.reset();
+      LOGI("Cleanup: micro-ROS Agent controller cleared");
     }
 
     // Clear arm commander controller
@@ -595,6 +608,7 @@ public:
   std::unique_ptr<ros2_android::PerceptionController> perception_controller_;
   std::unique_ptr<ros2_android::TargetManagerController> target_manager_controller_;
   std::unique_ptr<ros2_android::ArmCommanderController> arm_commander_controller_;
+  std::unique_ptr<ros2_android::MicroRosAgentController> micro_ros_agent_controller_;
 };
 
 static std::unique_ptr<AndroidApp> g_app;
@@ -1679,6 +1693,72 @@ extern "C"
     }
 
     return g_app->arm_commander_controller_->IsEnabled() ? JNI_TRUE : JNI_FALSE;
+  }
+
+  // =========================================================================
+  // micro-ROS Agent
+  // =========================================================================
+
+  JNIEXPORT jboolean JNICALL
+  Java_com_github_mowerick_ros2_android_util_NativeBridge_enableMicroRosAgent(
+      JNIEnv *env, jclass /*clazz*/, jstring device_id, jint baudrate)
+  {
+    if (!g_app)
+    {
+      LOGE("enableMicroRosAgent: g_app is null");
+      return JNI_FALSE;
+    }
+
+    const char *id = env->GetStringUTFChars(device_id, nullptr);
+    std::string device_id_str(id);
+    env->ReleaseStringUTFChars(device_id, id);
+
+    LOGI("enableMicroRosAgent: device=%s, baudrate=%d", device_id_str.c_str(), baudrate);
+
+    if (!g_app->micro_ros_agent_controller_)
+    {
+      g_app->micro_ros_agent_controller_ =
+          std::make_unique<ros2_android::MicroRosAgentController>(
+              device_id_str, static_cast<int>(baudrate));
+    }
+
+    g_app->micro_ros_agent_controller_->Enable();
+    LOGI("micro-ROS Agent enabled");
+    return JNI_TRUE;
+  }
+
+  JNIEXPORT void JNICALL
+  Java_com_github_mowerick_ros2_android_util_NativeBridge_disableMicroRosAgent(
+      JNIEnv * /*env*/, jclass /*clazz*/)
+  {
+    if (!g_app)
+    {
+      LOGE("disableMicroRosAgent: g_app is null");
+      return;
+    }
+
+    if (g_app->micro_ros_agent_controller_)
+    {
+      LOGI("disableMicroRosAgent: Disabling micro-ROS Agent");
+      g_app->micro_ros_agent_controller_->Disable();
+      g_app->micro_ros_agent_controller_.reset();
+    }
+    else
+    {
+      LOGW("disableMicroRosAgent: controller is null");
+    }
+  }
+
+  JNIEXPORT jboolean JNICALL
+  Java_com_github_mowerick_ros2_android_util_NativeBridge_isMicroRosAgentEnabled(
+      JNIEnv * /*env*/, jclass /*clazz*/)
+  {
+    if (!g_app || !g_app->micro_ros_agent_controller_)
+    {
+      return JNI_FALSE;
+    }
+
+    return g_app->micro_ros_agent_controller_->IsEnabled() ? JNI_TRUE : JNI_FALSE;
   }
 
 } // extern "C"

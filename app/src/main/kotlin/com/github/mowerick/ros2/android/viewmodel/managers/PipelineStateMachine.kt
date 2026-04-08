@@ -39,6 +39,9 @@ class PipelineStateMachine(
     private val _pipelineState = MutableStateFlow(PipelineState.STOPPED)
     val pipelineState: StateFlow<PipelineState> = _pipelineState
 
+    // Device ID of connected ESP32 for micro-ROS Agent (set by ExternalDeviceManager)
+    var microRosDeviceId: String? = null
+
     private val _discoveredTopics = MutableStateFlow<Set<String>>(emptySet())
     val discoveredTopics: StateFlow<Set<String>> = _discoveredTopics
 
@@ -117,7 +120,13 @@ class PipelineStateMachine(
                         NativeBridge.enableTargetManager()
                     }
                     "arm_commander" -> { NativeBridge.enableArmCommander() }
-                    "micro_ros_agent" -> { /* TODO: Implement micro-ROS agent start */ }
+                    "micro_ros_agent" -> {
+                        val deviceId = microRosDeviceId
+                        if (deviceId == null) {
+                            throw IllegalStateException("No ESP32 device connected for micro-ROS Agent")
+                        }
+                        NativeBridge.enableMicroRosAgent(deviceId, 115200)
+                    }
                 }
                 updateNodeState(nodeId) { it.copy(runningLocally = true, isProbing = false, isStarting = false) }
 
@@ -154,7 +163,11 @@ class PipelineStateMachine(
                         }
                     }
                     "arm_commander" -> { NativeBridge.disableArmCommander() }
-                    "micro_ros_agent" -> { /* TODO: Implement micro-ROS agent stop */ }
+                    "micro_ros_agent" -> {
+                        if (_nodeStates.value["micro_ros_agent"]?.runningLocally == true) {
+                            NativeBridge.disableMicroRosAgent()
+                        }
+                    }
                 }
 
                 stopDownstreamNodes(nodeId)

@@ -24,6 +24,11 @@ find_library(YDLIDAR_LIBRARY NAMES ydlidar_sdk libydlidar_sdk)
 find_path(PERCEPTION_INCLUDE_DIR perception/object_detection_controller.h)
 find_library(PERCEPTION_LIBRARY ros2_android_perception)
 
+# Find Micro-XRCE-DDS Agent
+find_package(microxrcedds_agent REQUIRED)
+find_package(fastrtps REQUIRED)
+find_package(fastcdr REQUIRED)
+
 # Perception dependency include paths (headers only for type definitions)
 set(PERCEPTION_DEPS_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../deps/ros2_android_perception/deps")
 set(NCNN_INCLUDE_DIR "${PERCEPTION_DEPS_ROOT}/ncnn/build-android/install/include")
@@ -93,6 +98,10 @@ add_library(android-ros SHARED
 
   # Arm commander controller (pan/tilt arm ACK/NACK protocol)
   arm_commander/controllers/arm_commander_controller.cc
+
+  # micro-ROS Agent (XRCE-DDS serial bridge to ESP32)
+  microros_agent/jni_serial_transport.cc
+  microros_agent/controllers/microros_agent_controller.cc
 )
 target_link_libraries(android-ros PRIVATE
     android
@@ -106,7 +115,10 @@ target_link_libraries(android-ros PRIVATE
     ${LIBYUV_LIBRARY}
     ${TURBOJPEG_LIBRARY}
     ${YDLIDAR_LIBRARY}
-    ${PERCEPTION_LIBRARY})
+    ${PERCEPTION_LIBRARY}
+    microxrcedds_agent
+    fastrtps
+    fastcdr)
 target_include_directories(android-ros PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
     ${LIBYUV_INCLUDE_DIR}
