@@ -460,11 +460,11 @@ void PerceptionController::ProcessFrame(
           static_cast<int>(det.bbox[2] - det.bbox[0]),  // width
           static_cast<int>(det.bbox[3] - det.bbox[1])); // height
 
-      // Get 3D location from point cloud (with RGB→cloud scaling)
-      Point3f point3d = Get3DLocation(bbox, *cloud, width, height);
+      // Get 3D location from point cloud (detections in model_input_size space)
+      Point3f point3d = Get3DLocation(bbox, *cloud);
 
       // Crop point cloud for this detection (with depth filtering)
-      auto cropped_cloud = CropPointCloud(bbox, *cloud, *depth, width, height);
+      auto cropped_cloud = CropPointCloud(bbox, *cloud, *depth);
 
       // Publish detection result
       PublishDetection(det, point3d, std::move(cropped_cloud), rgb->header);
@@ -565,26 +565,31 @@ void PerceptionController::ProcessFrame(
 // 3D Localization
 // ============================================================================
 
+// Python formula (object_detection.py yolov9 branch lines 311-316):
+//   x_scaled = math.floor(x / model_input_size[0] * pointcloud_size[0])
+//   y_scaled = math.floor(y / model_input_size[1] * pointcloud_size[1])
+//   idx = int(x_scaled + y_scaled * pointcloud_size[0])
+//
+// x, y are in model_input_size space (640x352).
+// ros2_numpy flattens the cloud to 1D, so byte offset = idx * point_step.
+int PerceptionController::GetCloudFlatIndex(int x, int y)
+{
+  int x_scaled = static_cast<int>(
+      static_cast<float>(x) / kModelInputWidth * kPointcloudWidth);
+  int y_scaled = static_cast<int>(
+      static_cast<float>(y) / kModelInputHeight * kPointcloudHeight);
+  return x_scaled + y_scaled * kPointcloudWidth;
+}
+
 Point3f PerceptionController::Get3DLocation(
     const Rect &bbox,
-    const sensor_msgs::msg::PointCloud2 &cloud,
-    int rgb_width, int rgb_height)
+    const sensor_msgs::msg::PointCloud2 &cloud)
 {
 
-  // Find center of bbox (in RGB coordinates)
-  int rgb_center_x = bbox.x + bbox.width / 2;
-  int rgb_center_y = bbox.y + bbox.height / 2;
-
-  // Scale from actual RGB space to actual point cloud space
-  float scale_x = static_cast<float>(cloud.width) / rgb_width;
-  float scale_y = static_cast<float>(cloud.height) / rgb_height;
-
-  int center_x = static_cast<int>(rgb_center_x * scale_x);
-  int center_y = static_cast<int>(rgb_center_y * scale_y);
-
-  // Clamp to cloud bounds
-  center_x = std::max(0, std::min(center_x, static_cast<int>(cloud.width) - 1));
-  center_y = std::max(0, std::min(center_y, static_cast<int>(cloud.height) - 1));
+  // Bbox center - detections are already in model_input_size space (640x352)
+  // matching Python yolov9 branch (object_detection.py lines 291-292)
+  int x = bbox.x + bbox.width / 2;
+  int y = bbox.y + bbox.height / 2;
 
   // Find field offsets for x, y, z
   int x_offset = -1, y_offset = -1, z_offset = -1;
@@ -604,37 +609,43 @@ Point3f PerceptionController::Get3DLocation(
     return Point3f(NAN, NAN, NAN);
   }
 
-  // Calculate data index
-  size_t index = center_y * cloud.row_step + center_x * cloud.point_step;
+  // Python flat index formula (object_detection.py line 330, 340)
+  int flat_idx = GetCloudFlatIndex(x, y);
+  size_t byte_offset = static_cast<size_t>(flat_idx) * cloud.point_step;
 
-  if (index + z_offset + sizeof(float) > cloud.data.size())
+  if (byte_offset + z_offset + sizeof(float) > cloud.data.size())
   {
-    LOGW("Point cloud index out of bounds");
+    LOGW("Point cloud flat index %d out of bounds (data_size=%zu, point_step=%u)",
+         flat_idx, cloud.data.size(), cloud.point_step);
     return Point3f(NAN, NAN, NAN);
   }
 
-  // Extract XYZ (assumes float32)
-  float x = *reinterpret_cast<const float *>(&cloud.data[index + x_offset]);
-  float y = *reinterpret_cast<const float *>(&cloud.data[index + y_offset]);
-  float z = *reinterpret_cast<const float *>(&cloud.data[index + z_offset]);
+  // Extract from cloud fields: [x, y, z] = [depth, lateral, vertical]
+  float cloud_x = *reinterpret_cast<const float *>(&cloud.data[byte_offset + x_offset]);
+  float cloud_y = *reinterpret_cast<const float *>(&cloud.data[byte_offset + y_offset]);
+  float cloud_z = *reinterpret_cast<const float *>(&cloud.data[byte_offset + z_offset]);
 
-  // Check for invalid points
-  if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z))
+  if (!std::isfinite(cloud_x) || !std::isfinite(cloud_y) || !std::isfinite(cloud_z))
   {
-    LOGD("Invalid point at bbox center (%d, %d)", center_x, center_y);
+    LOGD("Invalid point at bbox center (%d, %d) flat_idx=%d", x, y, flat_idx);
     return Point3f(NAN, NAN, NAN);
   }
 
-  LOGD("3D location: [%.3f, %.3f, %.3f] at pixel (%d, %d)",
-       x, y, z, center_x, center_y);
-  return Point3f(x, y, z);
+  // Remap to match Python coordinate convention (object_detection.py lines 347-349):
+  //   Point.x = cloud.y, Point.y = cloud.z, Point.z = cloud.x (depth)
+  float depth = cloud_x;
+  float lateral = cloud_y;
+  float vertical = cloud_z;
+
+  LOGD("3D location: [%.3f, %.3f, %.3f] (depth=%.3f) at pixel (%d, %d) flat_idx=%d",
+       lateral, vertical, depth, depth, x, y, flat_idx);
+  return Point3f(lateral, vertical, depth);
 }
 
 sensor_msgs::msg::PointCloud2::UniquePtr PerceptionController::CropPointCloud(
     const Rect &bbox,
     const sensor_msgs::msg::PointCloud2 &cloud,
-    const sensor_msgs::msg::Image &depth,
-    int rgb_width, int rgb_height)
+    const sensor_msgs::msg::Image &depth)
 {
   auto cropped = std::make_unique<sensor_msgs::msg::PointCloud2>();
   cropped->header = cloud.header;
@@ -643,38 +654,31 @@ sensor_msgs::msg::PointCloud2::UniquePtr PerceptionController::CropPointCloud(
   cropped->point_step = cloud.point_step;
   cropped->is_dense = false;
 
-  // Scale bbox from RGB to DEPTH space (depth_registered matches RGB from ZED)
-  float depth_scale_x = static_cast<float>(depth.width) / rgb_width;
-  float depth_scale_y = static_cast<float>(depth.height) / rgb_height;
+  // Bbox is in model_input_size space (640x352).
+  // Python accesses depth directly at these coordinates: self.depth[y][x]
+  // This reads from the top-left of the full-res depth image.
+  int x1 = std::max(0, bbox.x);
+  int y1 = std::max(0, bbox.y);
+  int x2 = std::min(static_cast<int>(depth.width), bbox.x + bbox.width);
+  int y2 = std::min(static_cast<int>(depth.height), bbox.y + bbox.height);
 
-  int dx1 = std::max(0, static_cast<int>(bbox.x * depth_scale_x));
-  int dy1 = std::max(0, static_cast<int>(bbox.y * depth_scale_y));
-  int dx2 = std::min(static_cast<int>(depth.width),
-                     static_cast<int>((bbox.x + bbox.width) * depth_scale_x));
-  int dy2 = std::min(static_cast<int>(depth.height),
-                     static_cast<int>((bbox.y + bbox.height) * depth_scale_y));
+  int crop_width = x2 - x1;
+  int crop_height = y2 - y1;
 
-  int depth_crop_width = dx2 - dx1;
-  int depth_crop_height = dy2 - dy1;
-
-  if (depth_crop_width <= 0 || depth_crop_height <= 0)
+  if (crop_width <= 0 || crop_height <= 0)
   {
     LOGW("Invalid bbox for cropping");
     return nullptr;
   }
 
-  // Cloud scaling (separate from depth)
-  float cloud_scale_x = static_cast<float>(cloud.width) / rgb_width;
-  float cloud_scale_y = static_cast<float>(cloud.height) / rgb_height;
-
-  // Calculate median depth in bbox (Python line 288) - iterate in depth space
+  // Calculate median depth in bbox (Python line 288)
   std::vector<float> depth_values;
-  depth_values.reserve(depth_crop_width * depth_crop_height);
+  depth_values.reserve(crop_width * crop_height);
 
   const float *depth_data = reinterpret_cast<const float *>(depth.data.data());
-  for (int y = dy1; y < dy2; ++y)
+  for (int y = y1; y < y2; ++y)
   {
-    for (int x = dx1; x < dx2; ++x)
+    for (int x = x1; x < x2; ++x)
     {
       float d = depth_data[y * depth.width + x];
       if (std::isfinite(d) && d > 0.0f)
@@ -700,16 +704,9 @@ sensor_msgs::msg::PointCloud2::UniquePtr PerceptionController::CropPointCloud(
   float min_depth = 0.9f * median_depth;
   float max_depth = 1.1f * median_depth;
 
-  // Set output cloud dimensions based on cloud-scaled bbox
-  int cx1 = std::max(0, static_cast<int>(bbox.x * cloud_scale_x));
-  int cy1 = std::max(0, static_cast<int>(bbox.y * cloud_scale_y));
-  int cx2 = std::min(static_cast<int>(cloud.width),
-                     static_cast<int>((bbox.x + bbox.width) * cloud_scale_x));
-  int cy2 = std::min(static_cast<int>(cloud.height),
-                     static_cast<int>((bbox.y + bbox.height) * cloud_scale_y));
-
-  cropped->width = cx2 - cx1;
-  cropped->height = cy2 - cy1;
+  // Output cloud dimensions from bbox (Python lines 300-301, 324-326)
+  cropped->width = bbox.width;
+  cropped->height = bbox.height;
   cropped->row_step = cropped->width * cloud.point_step;
   cropped->data.reserve(cropped->height * cropped->row_step);
 
@@ -725,10 +722,10 @@ sensor_msgs::msg::PointCloud2::UniquePtr PerceptionController::CropPointCloud(
       z_offset = field.offset;
   }
 
-  // Extract filtered points - iterate DEPTH space, map to CLOUD space for cloud access
-  for (int y = dy1; y < dy2; ++y)
+  // Extract filtered points - iterate model_input_size bbox, use Python flat index
+  for (int y = y1; y < y2; ++y)
   {
-    for (int x = dx1; x < dx2; ++x)
+    for (int x = x1; x < x2; ++x)
     {
       float pixel_depth = depth_data[y * depth.width + x];
 
@@ -738,16 +735,12 @@ sensor_msgs::msg::PointCloud2::UniquePtr PerceptionController::CropPointCloud(
       if (!std::isfinite(pixel_depth) || pixel_depth > 5.0f)
         continue;
 
-      // Convert depth pixel to cloud pixel (depth -> RGB -> cloud)
-      int cloud_x = std::max(0, std::min(
-          static_cast<int>(x / depth_scale_x * cloud_scale_x),
-          static_cast<int>(cloud.width) - 1));
-      int cloud_y = std::max(0, std::min(
-          static_cast<int>(y / depth_scale_y * cloud_scale_y),
-          static_cast<int>(cloud.height) - 1));
+      // Use Python flat index formula directly (object_detection.py yolov9 lines 311-316)
+      // x, y are already in model_input_size space (640x352)
+      int flat_idx = GetCloudFlatIndex(x, y);
+      size_t src_index = static_cast<size_t>(flat_idx) * cloud.point_step;
 
       // Check if point cloud point is valid
-      size_t src_index = cloud_y * cloud.row_step + cloud_x * cloud.point_step;
       if (x_offset >= 0 && src_index + z_offset + sizeof(float) <= cloud.data.size())
       {
         float z = *reinterpret_cast<const float *>(&cloud.data[src_index + z_offset]);
@@ -765,8 +758,14 @@ sensor_msgs::msg::PointCloud2::UniquePtr PerceptionController::CropPointCloud(
     }
   }
 
-  LOGD("Cropped cloud: %ux%u, %zu points filtered",
-       cropped->width, cropped->height, cropped->data.size() / cloud.point_step);
+  // Set as unorganized cloud (height=1, width=actual_points) to match
+  // ros2_numpy's array_to_point_cloud2 output (point_cloud2.py line 82)
+  size_t actual_points = cropped->data.size() / cloud.point_step;
+  cropped->width = actual_points;
+  cropped->height = 1;
+  cropped->row_step = cropped->data.size();
+
+  LOGD("Cropped cloud: %zu points filtered", actual_points);
   return cropped;
 }
 
@@ -784,10 +783,20 @@ void PerceptionController::PublishDetection(
        det.class_id, det.confidence, point3d.x, point3d.y, point3d.z,
        cropped_cloud ? cropped_cloud->data.size() : 0);
 
-  // Publish Point (center location) - only if < 2m (Python line 337)
+  // Publish Point (center location) - only if depth < 2m (Python line 337)
+  // Point3f is already remapped in Get3DLocation: .z = depth (cloud.x)
   if (std::isfinite(point3d.x) && std::isfinite(point3d.y) &&
       std::isfinite(point3d.z) && point3d.z < 2.0f)
   {
+    // Validation CSV log - matches Python detections_3d.csv columns
+    // Grep with: adb logcat | grep "VALIDATION_3D"
+    LOGD("VALIDATION_3D,%d,%d,%d,%d,%.4f,%d,%s,%.6f,%.6f,%.6f",
+         static_cast<int>(det.bbox[0]), static_cast<int>(det.bbox[1]),
+         static_cast<int>(det.bbox[2]), static_cast<int>(det.bbox[3]),
+         det.confidence, det.class_id,
+         (det.class_id == 0 ? "cpb_beetle" : (det.class_id == 1 ? "cpb_larva" : "cpb_eggs")),
+         point3d.x, point3d.y, point3d.z);
+
     geometry_msgs::msg::Point point_msg;
     point_msg.x = point3d.x;
     point_msg.y = point3d.y;

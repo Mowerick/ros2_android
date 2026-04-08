@@ -212,6 +212,23 @@ class PerceptionController : public SensorDataProvider {
   // 3D localization
   // ============================================================================
 
+  // Python point cloud indexing parameters (object_detection.py yolov9 branch)
+  // model_input_size = [640, 352] - YOLO input after resize+crop
+  // pointcloud_size = [448, 256] - point cloud dimensions
+  static constexpr int kModelInputWidth = 640;
+  static constexpr int kModelInputHeight = 352;
+  static constexpr int kPointcloudWidth = 448;
+  static constexpr int kPointcloudHeight = 256;
+
+  /**
+   * Compute flat point cloud index from model_input_size coordinates.
+   * Replicates Python formula (object_detection.py yolov9 branch lines 311-316):
+   *   x_scaled = floor(x / model_input_size[0] * pointcloud_size[0])
+   *   y_scaled = floor(y / model_input_size[1] * pointcloud_size[1])
+   *   idx = x_scaled + y_scaled * pointcloud_size[0]
+   */
+  static int GetCloudFlatIndex(int x, int y);
+
   /**
    * Get 3D world coordinates from point cloud at bbox center
    * @param bbox Bounding box in image coordinates
@@ -219,8 +236,7 @@ class PerceptionController : public SensorDataProvider {
    * @return 3D point (x, y, z) or (NaN, NaN, NaN) if invalid
    */
   Point3f Get3DLocation(const Rect& bbox,
-                        const sensor_msgs::msg::PointCloud2& cloud,
-                        int rgb_width, int rgb_height);
+                        const sensor_msgs::msg::PointCloud2& cloud);
 
   /**
    * Crop point cloud to bbox region with depth filtering
@@ -232,8 +248,7 @@ class PerceptionController : public SensorDataProvider {
   sensor_msgs::msg::PointCloud2::UniquePtr CropPointCloud(
       const Rect& bbox,
       const sensor_msgs::msg::PointCloud2& cloud,
-      const sensor_msgs::msg::Image& depth,
-      int rgb_width, int rgb_height);
+      const sensor_msgs::msg::Image& depth);
 
   // ============================================================================
   // Publishing and logging
