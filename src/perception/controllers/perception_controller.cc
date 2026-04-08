@@ -152,7 +152,6 @@ void PerceptionController::Enable()
     return;
   }
 
-  // Currently used for the heavy processing of depth and point cloud
   auto qos = rclcpp::QoS(rclcpp::KeepLast(10))
                  .reliable()
                  .durability_volatile();
