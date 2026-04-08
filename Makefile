@@ -57,6 +57,10 @@ $(DEPS_STAMP): ros.repos
 	git submodule update
 	@echo "==> Fetching ROS 2 dependencies via vcs..."
 	vcs import --input ros.repos $(DEPS_DIR)/
+	@echo "==> Initializing Fast DDS thirdparty submodules..."
+	cd $(DEPS_DIR)/fast-dds && git submodule update --init thirdparty/asio thirdparty/tinyxml2 thirdparty/android-ifaddrs
+	@echo "==> Applying Android patches for Fast DDS..."
+	cd $(DEPS_DIR)/fast-dds && patch -p1 < $(CURDIR)/android_patches/fast_dds_filewatch_chrono.patch || true
 	@echo "==> Fetching ros2_android_perception dependencies..."
 	cd $(DEPS_DIR)/ros2_android_perception && $(MAKE) deps
 	@touch $(DEPS_STAMP)

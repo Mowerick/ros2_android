@@ -68,6 +68,89 @@ macro(build_crosscompile_dependencies)
       -DOpenCV_DIR=${CMAKE_CURRENT_SOURCE_DIR}/deps/ros2_android_perception/deps/opencv-mobile-4.10.0-android/sdk/native/jni
   )
 
+  # =========================================================================
+  # Fast DDS + Micro-XRCE-DDS Agent dependencies (for micro-ROS Agent)
+  # =========================================================================
+
+  # Fast-CDR - eProsima serialization library (pure C++, low risk)
+  dep_build(fast-cdr CMAKE
+    SOURCE_DIR "deps/fast-cdr"
+    CMAKE_ARGS ${extra_cmake_args}
+      -DBUILD_SHARED_LIBS=OFF)
+
+  # foonathan_memory - memory allocator (uses try_compile for node sizes, works cross-compiled)
+  dep_build(foonathan_memory CMAKE
+    SOURCE_DIR "deps/foonathan_memory"
+    CMAKE_ARGS ${extra_cmake_args}
+      -DBUILD_SHARED_LIBS=OFF
+      -DFOONATHAN_MEMORY_BUILD_EXAMPLES=OFF
+      -DFOONATHAN_MEMORY_BUILD_TESTS=OFF
+      -DFOONATHAN_MEMORY_BUILD_TOOLS=OFF)
+
+  # Fast DDS (fastrtps) - DDS implementation required by Micro-XRCE-DDS-Agent
+  # SHM disabled: Bionic libc has no shm_open/shm_unlink
+  # fastcdr/foonathan_memory: found via find_package (pre-built above)
+  # Asio/TinyXML2/android-ifaddrs: from bundled thirdparty submodules
+  dep_build(fast-dds CMAKE
+    SOURCE_DIR "deps/fast-dds"
+    DEPENDENCIES fast-cdr foonathan_memory
+    CMAKE_ARGS ${extra_cmake_args}
+      -DBUILD_SHARED_LIBS=OFF
+      -DSHM_TRANSPORT_DEFAULT=OFF
+      -DSECURITY=OFF
+      -DTHIRDPARTY_fastcdr=OFF
+      -DTHIRDPARTY_foonathan_memory=OFF
+      -DTHIRDPARTY_Asio=FORCE
+      -DTHIRDPARTY_TinyXML2=FORCE
+      -DTHIRDPARTY_android-ifaddrs=FORCE
+      -DTHIRDPARTY_UPDATE=OFF
+      -DCOMPILE_EXAMPLES=OFF
+      -DLOG_NO_INFO=ON
+      # Cross-compilation: can't run try_run for shared_mutex check
+      # Force thirdparty shared_mutex (safe default for Android)
+      -DSM_RUN_RESULT=1
+      -DSM_RUN_RESULT__TRYRUN_OUTPUT=FAILED)
+
+  # Micro-CDR - lightweight C99 serialization (needed by XRCE-DDS Client)
+  dep_build(micro-cdr CMAKE
+    SOURCE_DIR "deps/micro-cdr"
+    CMAKE_ARGS ${extra_cmake_args}
+      -DBUILD_SHARED_LIBS=OFF)
+
+  # Micro-XRCE-DDS-Client - XRCE-DDS client library (pure C99)
+  dep_build(micro-xrce-dds-client CMAKE
+    SOURCE_DIR "deps/micro-xrce-dds-client"
+    DEPENDENCIES micro-cdr
+    CMAKE_ARGS ${extra_cmake_args}
+      -DBUILD_SHARED_LIBS=OFF
+      -DUCLIENT_BUILD_EXAMPLES=OFF
+      -DUCLIENT_BUILD_TESTS=OFF)
+
+  # Micro-XRCE-DDS-Agent - the micro-ROS Agent core
+  # Superbuild OFF: we provide pre-built deps via CMAKE_FIND_ROOT_PATH
+  # Uses system-installed fastrtps and fastcdr from our superbuild
+  dep_build(micro-xrce-dds-agent CMAKE
+    SOURCE_DIR "deps/micro-xrce-dds-agent"
+    DEPENDENCIES fast-dds fast-cdr micro-xrce-dds-client micro-cdr foonathan_memory
+    CMAKE_ARGS ${extra_cmake_args}
+      -DBUILD_SHARED_LIBS=OFF
+      -DUAGENT_SUPERBUILD=OFF
+      -DUAGENT_USE_SYSTEM_FASTDDS=ON
+      -DUAGENT_USE_SYSTEM_FASTCDR=ON
+      -DUAGENT_FAST_PROFILE=ON
+      -DUAGENT_CED_PROFILE=OFF
+      -DUAGENT_DISCOVERY_PROFILE=OFF
+      -DUAGENT_P2P_PROFILE=OFF
+      -DUAGENT_SOCKETCAN_PROFILE=OFF
+      -DUAGENT_LOGGER_PROFILE=OFF
+      -DUAGENT_BUILD_EXECUTABLE=OFF
+      -DUAGENT_BUILD_USAGE_EXAMPLES=OFF
+      -DUAGENT_BUILD_TESTS=OFF)
+
+  # =========================================================================
+  # End of Fast DDS + Micro-XRCE-DDS Agent dependencies
+  # =========================================================================
+
   dep_build(ament_index_python PIP
     SOURCE_DIR "deps/ament_index/ament_index_python"
     DEPENDENCIES )

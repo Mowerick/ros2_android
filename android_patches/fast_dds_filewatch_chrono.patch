@@ -1,0 +1,22 @@
+diff --git a/thirdparty/filewatch/FileWatch.hpp b/thirdparty/filewatch/FileWatch.hpp
+index 1ed0c66..5105dda 100644
+--- a/thirdparty/filewatch/FileWatch.hpp
++++ b/thirdparty/filewatch/FileWatch.hpp
+@@ -508,7 +508,7 @@ namespace filewatch {
+ 
+                 std::chrono::time_point<std::chrono::system_clock> current_time;
+                 current_time += std::chrono::seconds(result.st_mtim.tv_sec);
+-                current_time += std::chrono::nanoseconds(result.st_mtim.tv_nsec);
++                current_time += std::chrono::duration_cast<std::chrono::system_clock::duration>(std::chrono::nanoseconds(result.st_mtim.tv_nsec));
+ 
+                 unsigned long current_size = result.st_size;
+ 
+@@ -605,7 +605,7 @@ namespace filewatch {
+             stat(_path.c_str(), &result);
+ 
+             last_write_time_ += std::chrono::seconds(result.st_mtim.tv_sec);
+-            last_write_time_ += std::chrono::nanoseconds(result.st_mtim.tv_nsec);
++            last_write_time_ += std::chrono::duration_cast<std::chrono::system_clock::duration>(std::chrono::nanoseconds(result.st_mtim.tv_nsec));
+ 
+             // Initialize filesize
+             last_size_ = result.st_size;
