@@ -37,7 +37,6 @@ static const ACameraDevice_stateCallbacks kCameraStateCallbacks = {
 
 void OnImage(void *context, AImageReader *reader)
 {
-  LOGI("OnImage callback triggered!");
   AImage *cimage = nullptr;
   auto status = AImageReader_acquireNextImage(reader, &cimage);
 
@@ -134,7 +133,7 @@ static ACameraCaptureSession_captureCallbacks captureCallbacks{
 
 /// ***************** CameraDevice ********************
 std::unique_ptr<CameraDevice> CameraDevice::OpenCamera(
-    ACameraManager *native_manager, const CameraDescriptor &desc, const std::string& device_id)
+    ACameraManager *native_manager, const CameraDescriptor &desc, const std::string &device_id)
 {
   const char *camera_id = desc.id.c_str();
   auto camera_device = std::unique_ptr<CameraDevice>(new CameraDevice);
@@ -472,7 +471,6 @@ CameraDevice::~CameraDevice()
 
 void CameraDevice::OnImage(std::unique_ptr<AImage, AImageDeleter> image)
 {
-  LOGI("CameraDevice::OnImage - handing off to processing thread");
   // Hand off image data to processing thread
   std::unique_lock lock(mutex_);
   image_ = std::move(image);
