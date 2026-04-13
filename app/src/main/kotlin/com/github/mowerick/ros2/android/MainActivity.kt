@@ -3,6 +3,9 @@ package com.github.mowerick.ros2.android
 import android.Manifest
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import android.content.pm.PackageManager
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
@@ -255,15 +258,20 @@ class MainActivity : ComponentActivity(), PermissionHandler, NetworkInterfacePro
                 val activeNotifications by vm.notifications.collectAsState()
                 val perceptionState by vm.perceptionState.collectAsState()
                 val debugFrameRgb by vm.debugFrameRgb.collectAsState()
-                val debugFrameDepth by vm.debugFrameDepth.collectAsState()
                 val beetlePredatorState by vm.beetlePredatorState.collectAsState()
                 val beetlePredatorDebugFrame by vm.beetlePredatorDebugFrame.collectAsState()
 
-                // Handle orientation changes based on screen
+                // Handle orientation and immersive mode based on screen
                 LaunchedEffect(screen) {
-                    requestedOrientation = when (screen) {
-                        is Screen.DebugVisualizationFullscreen -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-                        else -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                    val insetsController = WindowCompat.getInsetsController(window, window.decorView)
+                    if (screen is Screen.DebugVisualizationFullscreen) {
+                        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                        insetsController.hide(WindowInsetsCompat.Type.systemBars())
+                        insetsController.systemBarsBehavior =
+                            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                    } else {
+                        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                        insetsController.show(WindowInsetsCompat.Type.systemBars())
                     }
                 }
 
@@ -396,7 +404,6 @@ class MainActivity : ComponentActivity(), PermissionHandler, NetworkInterfacePro
                                 detectedOnNetwork = vm.isNodeDetectedOnNetwork(node.id),
                                 visualizationEnabled = perceptionState.visualizationEnabled,
                                 debugFrameRgb = debugFrameRgb,
-                                debugFrameDepth = debugFrameDepth,
                                 onEnableVisualization = { vm.enableVisualization() },
                                 onDisableVisualization = { vm.disableVisualization() },
                                 onFullscreenClick = { vm.navigateToDebugFullscreen() },
@@ -432,7 +439,6 @@ class MainActivity : ComponentActivity(), PermissionHandler, NetworkInterfacePro
                     is Screen.DebugVisualizationFullscreen -> {
                         FullscreenDebugVisualizationScreen(
                             debugFrameRgb = debugFrameRgb,
-                            debugFrameDepth = debugFrameDepth,
                             onBack = { vm.navigateBack() }
                         )
                     }

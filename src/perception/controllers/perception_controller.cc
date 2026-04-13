@@ -542,21 +542,6 @@ void PerceptionController::ProcessFrame(
       }
     }
 
-    // Encode and store depth annotated frame (if available)
-    if (result.has_depth_visualization && !result.annotated_depth_bgr.empty())
-    {
-      auto depth_jpeg = encode_jpeg(result.annotated_depth_bgr.data(),
-                                    result.depth_width, result.depth_height);
-      if (!depth_jpeg.empty())
-      {
-        {
-          std::lock_guard<std::mutex> lock(debug_frames_mutex_);
-          debug_frames_jpeg_["depth_annotated"] = std::move(depth_jpeg);
-        }
-        PostDebugFrameUpdate("depth_annotated");
-        LOGD("Stored depth annotated frame (%zu KB)", depth_jpeg.size() / 1024);
-      }
-    }
   }
 }
 

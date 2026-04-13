@@ -31,9 +31,6 @@ class PerceptionManager(
     private val _debugFrameRgb = MutableStateFlow<Bitmap?>(null)
     val debugFrameRgb: StateFlow<Bitmap?> = _debugFrameRgb
 
-    private val _debugFrameDepth = MutableStateFlow<Bitmap?>(null)
-    val debugFrameDepth: StateFlow<Bitmap?> = _debugFrameDepth
-
     init {
         // Check if perception models exist
         coroutineScope.launch(Dispatchers.IO) {
@@ -102,7 +99,6 @@ class PerceptionManager(
         NativeBridge.nativeEnablePerceptionVisualization(false)
         _perceptionState.value = _perceptionState.value.copy(visualizationEnabled = false)
         _debugFrameRgb.value = null
-        _debugFrameDepth.value = null
     }
 
     fun updateDebugFrame(frameId: String) {
@@ -111,9 +107,8 @@ class PerceptionManager(
                 val bitmap = NativeBridge.nativeGetDebugFrame(frameId)
 
                 withContext(Dispatchers.Main) {
-                    when (frameId) {
-                        "rgb_annotated" -> _debugFrameRgb.value = bitmap
-                        "depth_annotated" -> _debugFrameDepth.value = bitmap
+                    if (frameId == "rgb_annotated") {
+                        _debugFrameRgb.value = bitmap
                     }
                 }
             } catch (e: Exception) {

@@ -115,7 +115,6 @@ class RosViewModel(
     val nodeStates: StateFlow<Map<String, NodeRuntimeState>> = pipelineStateMachine.nodeStates
     val perceptionState: StateFlow<PerceptionManager.PerceptionState> = perceptionManager.perceptionState
     val debugFrameRgb: StateFlow<Bitmap?> = perceptionManager.debugFrameRgb
-    val debugFrameDepth: StateFlow<Bitmap?> = perceptionManager.debugFrameDepth
     val beetlePredatorState: StateFlow<BeetlePredatorManager.BeetlePredatorState> = beetlePredatorManager.state
     val beetlePredatorDebugFrame: StateFlow<Bitmap?> = beetlePredatorManager.debugFrame
 
