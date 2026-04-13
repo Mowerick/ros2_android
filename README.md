@@ -19,6 +19,7 @@ Target: Android 13 (API 33), NDK 26.3.
 - **Notification system** - user notification overlay for alerts and error messages from both native (C++) and Kotlin layers
 - **Jetpack Compose UI** - sensor list, live sensor data view, camera preview, pipeline node management with runtime state visualization
 - **Testing framework** - Python-based ROS 2 subscriber test suite with matplotlib visualizers for all sensor types
+- **Beetle Predator mode** - handheld pest detection using built-in rear camera + GPS. Runs NCNN YOLOv9 + Deep SORT on camera frames, publishes geolocated detections as `vermin_collector_ros_msgs/BeetleDetection` with novelty filtering (only new confirmed tracks). User selects which classes (beetle, larva, eggs) trigger publishing via label filter chips
 - **Target manager** - CPB egg selection with IMU-based orientation calibration, subscribes to detection results and ZED IMU, publishes pan/tilt goals for the arm commander
 - **Arm commander** - pan/tilt arm control with ACK/NACK protocol and state machine (IDLE - AWAITING_ACK - AWAITING_DONE - WAIT_AFTER_DONE), subscribes to position goals, publishes `/PointNShoot` commands for micro-ROS
 
@@ -81,6 +82,12 @@ Target: Android 13 (API 33), NDK 26.3.
 │   │                    │ sub: ACK)   │      │   │
 │   │                    └─────────────┘      │   │
 │   └─────────────────────────────────────────┘   │
+│                                                 │
+│   ┌─────────────────────────────────────────┐   │
+│   │ Beetle Predator (handheld detection)    │   │
+│   │ Rear camera ──► NCNN YOLOv9 + Deep SORT │   │
+│   │ + GPS location ──► BeetleDetection msg  │   │
+│   └─────────────────────────────────────────┘   │
 └──────┬──────────────────────────────────────────┘
        │
 ┌──────▼──────┐
@@ -95,7 +102,8 @@ Target: Android 13 (API 33), NDK 26.3.
 │   ROS 2 Network (same domain ID)                            │
 │   - Other ROS 2 nodes on host machine                       │
 │   - Topics: /<device_id>/sensors/*, /<device_id>/camera/*,  │
-│     /scan, /cpb_*, /arm_position_*, /PointNShoot            │
+│     /scan, /cpb_*, /arm_position_*, /PointNShoot,           │
+│     /<device_id>/beetle_predator/detection                   │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -107,6 +115,7 @@ The native layer cross-compiles ~70 ROS 2 Humble packages via a CMake superbuild
 - **GPS** - acquired in Kotlin via `FusedLocationProviderClient` (Google Play Services - required on device), location updates passed to C++ GPS controller via JNI
 - **Cameras** - acquired in Java via `Camera2` API, frames passed to C++ camera controllers via JNI for encoding and publishing
 - **USB LiDAR** - YDLIDAR connected via USB serial (JNI fd handoff from Kotlin USB Host API), scan data published by C++ LiDAR controller
+- **Beetle Predator** - rear camera frames (RGBA via `GetLastFrame()`) + GPS location (`GetLastLocation()`) combined with NCNN inference, publishes `vermin_collector_ros_msgs/BeetleDetection` for confirmed Deep SORT tracks
 
 ## Published ROS 2 Topics
 
@@ -148,6 +157,10 @@ The app publishes the following topics that can be discovered and consumed by ot
 - `/arm_position_goal` - `std_msgs/Float32MultiArray` - pan/tilt goal from target manager
 - `/PointNShoot` - `std_msgs/Float32MultiArray` - pan/tilt command to microcontroller
 - `/arm_position_feedback` - `std_msgs/String` - arm commander state feedback
+
+**Beetle Predator (handheld detection):**
+
+- `/<device_id>/beetle_predator/detection` - `vermin_collector_ros_msgs/BeetleDetection` - geolocated pest detection (GPS + 2D bbox + class label + track ID)
 
 > [!NOTE]
 > `<device_id>` is configurable in the app's ROS Setup screen and defaults to the device's sanitized name (e.g., `pixel_7`, `galaxy_s23`). This namespace allows multiple Android devices to publish on the same ROS 2 network without topic collisions.
