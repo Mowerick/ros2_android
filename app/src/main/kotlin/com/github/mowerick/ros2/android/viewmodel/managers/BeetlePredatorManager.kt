@@ -64,6 +64,10 @@ class BeetlePredatorManager(
                 val modelsPath = "${applicationContext.filesDir.absolutePath}/models"
                 NativeBridge.enableBeetlePredator(modelsPath)
 
+                // Apply current label filter to the newly created controller
+                val mask = labelSetToMask(_state.value.labelFilter)
+                NativeBridge.setBeetlePredatorLabelFilter(mask)
+
                 // Enable visualization automatically
                 NativeBridge.enableBeetlePredatorVisualization(true)
 

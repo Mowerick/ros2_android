@@ -63,6 +63,29 @@ fun BeetlePredatorScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            // Label filter chips
+            Text(
+                text = "Publish on detection of:",
+                style = MaterialTheme.typography.labelLarge
+            )
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                val labels = listOf(
+                    "cpb_beetle" to "Beetle",
+                    "cpb_larva" to "Larva",
+                    "cpb_eggs" to "Eggs"
+                )
+                labels.forEach { (id, displayName) ->
+                    FilterChip(
+                        selected = id in state.labelFilter,
+                        onClick = { onToggleLabel(id) },
+                        enabled = !state.enabled,
+                        label = { Text(displayName) }
+                    )
+                }
+            }
+
             // Start/Stop button
             if (state.enabled) {
                 OutlinedButton(
@@ -83,28 +106,6 @@ fun BeetlePredatorScreen(
                             state.labelFilter.isEmpty() -> "Select at least one label"
                             else -> "Start Detection"
                         }
-                    )
-                }
-            }
-
-            // Label filter chips
-            Text(
-                text = "Publish on detection of:",
-                style = MaterialTheme.typography.labelLarge
-            )
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                val labels = listOf(
-                    "cpb_beetle" to "Beetle",
-                    "cpb_larva" to "Larva",
-                    "cpb_eggs" to "Eggs"
-                )
-                labels.forEach { (id, displayName) ->
-                    FilterChip(
-                        selected = id in state.labelFilter,
-                        onClick = { onToggleLabel(id) },
-                        label = { Text(displayName) }
                     )
                 }
             }
