@@ -10,7 +10,7 @@ Target: Android 13 (API 33), NDK 26.3.
 
 - **Built-in sensor publishers** - accelerometer, barometer, gyroscope, illuminance, magnetometer, GPS location published as ROS 2 topics with frame IDs and timestamps
 - **Camera publisher** - front and rear device cameras published as `sensor_msgs/Image` (raw BGR8) and `sensor_msgs/CompressedImage` (JPEG)
-- **USB LiDAR** - YDLIDAR SDK integration via JNI fd handoff, published as `sensor_msgs/LaserScan`
+- **USB LiDAR** - YDLIDAR SDK integration via JNI serial bridge to Android USB Host API, published as `sensor_msgs/LaserScan`
 - **YOLOv9 object detection** - on-device inference via NCNN (YOLOv9-s + Deep SORT tracker) for Colorado Potato Beetle detection (beetle, larva, eggs) with 3D localization from ZED camera point clouds
 - **State machine pipeline** - sequential ROS 2 subsystem with dynamic node detection (local vs external execution), automatic dependency progression, and distributed deployment support
 - **Wi-Fi multicast / DDS discovery** - `MulticastLock` to enable DDS multicast on Android Wi-Fi
@@ -119,7 +119,7 @@ The native layer cross-compiles ~70 ROS 2 Humble packages via a CMake superbuild
 - **IMU sensors** (accelerometer, gyroscope, magnetometer, barometer, illuminance) - acquired in C++ via `ASensorManager` (NDK), event queue forwarded to ROS controllers
 - **GPS** - acquired in Kotlin via `FusedLocationProviderClient` (Google Play Services - required on device), location updates passed to C++ GPS controller via JNI
 - **Cameras** - acquired in Java via `Camera2` API, frames passed to C++ camera controllers via JNI for encoding and publishing
-- **USB LiDAR** - YDLIDAR connected via USB serial (JNI fd handoff from Kotlin USB Host API), scan data published by C++ LiDAR controller
+- **USB LiDAR** - YDLIDAR connected via USB serial (JNI serial bridge: C++ SDK calls routed through JNI to Kotlin `BufferedUsbSerialPort` wrapping `mik3y/usb-serial-for-android`), scan data published by C++ LiDAR controller
 - **Beetle Predator** - rear camera frames (RGBA via `GetLastFrame()`) + GPS location (`GetLastLocation()`) combined with NCNN inference, publishes `vermin_collector_ros_msgs/BeetleDetection` for confirmed Deep SORT tracks
 
 ## Published ROS 2 Topics
