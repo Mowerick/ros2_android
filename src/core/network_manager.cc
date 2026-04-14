@@ -93,23 +93,30 @@ bool NetworkManager::WriteConfigFile(
 
   // Write Cyclone DDS XML configuration
   // Enable multicast for DDS discovery on Android Wi-Fi
-  // Configure for large messages (depth ~8MB, cloud ~33MB)
+  // Small MaxMessageSize forces RTPS-level fragmentation (no IP fragmentation)
+  // Large buffers/WHC needed for 8MB depth + 33MB PointCloud2 over WiFi
   config_file << "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n";
   config_file << "<CycloneDDS xmlns=\"https://cdds.io/config\">\n";
   config_file << "  <Domain id=\"any\">\n";
   config_file << "    <General>\n";
   config_file << "      <AllowMulticast>spdp</AllowMulticast>\n";
-  config_file << "      <MaxMessageSize>65500B</MaxMessageSize>\n";
+  config_file << "      <MaxMessageSize>1472B</MaxMessageSize>\n";
+  config_file << "      <FragmentSize>1344B</FragmentSize>\n";
   config_file << "      <Interfaces>\n";
   config_file << "        <NetworkInterface name=\"" << network_interface
               << "\"/>\n";
   config_file << "      </Interfaces>\n";
   config_file << "    </General>\n";
   config_file << "    <Internal>\n";
-  config_file << "      <SocketReceiveBufferSize min=\"10MB\"/>\n";
-  config_file << "      <Watermarks>";
-  config_file << "        <WhcHigh>500kB</WhcHigh>";
-  config_file << "      </Watermarks>";
+  config_file << "      <Watermarks>\n";
+  config_file << "        <WhcLow>1MB</WhcLow>\n";
+  config_file << "        <WhcHighInit>1MB</WhcHighInit>\n";
+  config_file << "        <WhcHigh>64MB</WhcHigh>\n";
+  config_file << "      </Watermarks>\n";
+  config_file << "      <SocketReceiveBufferSize/>\n";
+  config_file << "      <MaxQueuedRexmitBytes>64MB</MaxQueuedRexmitBytes>\n";
+  config_file << "      <DefragReliableMaxSamples>16</DefragReliableMaxSamples>\n";
+  config_file << "      <DefragUnreliableMaxSamples>4</DefragUnreliableMaxSamples>\n";
   config_file << "    </Internal>\n";
   config_file << "  </Domain>\n";
   config_file << "</CycloneDDS>\n";

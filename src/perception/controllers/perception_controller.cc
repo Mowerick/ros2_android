@@ -151,6 +151,10 @@ void PerceptionController::Enable()
     return;
   }
 
+  // Reliable QoS to match ZED publisher QoS - a best_effort subscriber cannot
+  // receive from a reliable publisher (DDS QoS compatibility rule). KeepLast(10)
+  // provides buffer depth for large messages (33MB PointCloud2) that take
+  // significant time to reassemble from RTPS fragments over WiFi.
   auto qos = rclcpp::QoS(rclcpp::KeepLast(10))
                  .reliable()
                  .durability_volatile();
@@ -256,7 +260,7 @@ void PerceptionController::OnRGB(
 void PerceptionController::OnDepth(
     const sensor_msgs::msg::Image::SharedPtr msg)
 {
-
+  LOGD("OnDepth: Received depth message (%ux%u)", msg->width, msg->height);
   std::lock_guard<std::mutex> lock(latest_mutex_);
   latest_depth_ = msg;
 
@@ -270,7 +274,7 @@ void PerceptionController::OnDepth(
 void PerceptionController::OnPointCloud(
     const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
-
+  LOGD("OnPointCloud: Received point cloud message (%ux%u)", msg->width, msg->height);
   std::lock_guard<std::mutex> lock(latest_mutex_);
   latest_cloud_ = msg;
 
@@ -540,7 +544,6 @@ void PerceptionController::ProcessFrame(
         LOGD("Stored RGB annotated frame (%zu KB)", rgb_jpeg.size() / 1024);
       }
     }
-
   }
 }
 

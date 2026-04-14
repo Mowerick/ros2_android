@@ -24,7 +24,7 @@ object NativeBridge {
     external fun nativeSetNetworkInterfaces(interfaces: Array<String>)
     external fun nativeOnPermissionResult(permission: String, granted: Boolean)
 
-    external fun nativeStartRos(domainId: Int, networkInterface: String, deviceId: String)
+    external fun nativeStartRos(domainId: Int, networkInterface: String, deviceId: String): Boolean
     external fun nativeGetSensorList(): Array<SensorInfo>
     external fun nativeGetSensorData(uniqueId: String): SensorReading?
     external fun nativeGetCameraList(): Array<CameraInfo>

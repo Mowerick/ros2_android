@@ -134,7 +134,7 @@ public:
     }
   }
 
-  void StartRos(int32_t ros_domain_id, const std::string &network_interface, const std::string &device_id)
+  bool StartRos(int32_t ros_domain_id, const std::string &network_interface, const std::string &device_id)
   {
     LOGI("Starting ROS with domain: %d, interface: %s, device: %s",
          ros_domain_id, network_interface.c_str(), device_id.c_str());
@@ -143,20 +143,25 @@ public:
     if (ros_ && ros_->Initialized())
     {
       LOGW("ROS is already initialized. Configuration not changed.");
-      return;
+      return true;
     }
 
     // Generate Cyclone DDS config using NetworkManager (with caching)
     if (!network_manager_.GenerateCycloneDdsConfig(cache_dir_, ros_domain_id, network_interface))
     {
       LOGE("Failed to generate Cyclone DDS config");
-      return;
+      return false;
     }
 
     // Create ROS interface with device_id
     ros_.emplace(device_id);
     LOGI("Initializing ROS with device_id: %s", device_id.c_str());
-    ros_->Initialize(ros_domain_id);
+    if (!ros_->Initialize(ros_domain_id))
+    {
+      LOGE("ROS initialization failed, aborting StartRos");
+      ros_.reset();
+      return false;
+    }
 
     // Create sensor controllers using SensorManager
     size_t sensor_count = sensor_manager_.CreateControllers(*ros_);
@@ -184,6 +189,8 @@ public:
       }
       started_cameras_ = true;
     }
+
+    return true;
   }
 
   void Cleanup()
@@ -701,18 +708,19 @@ extern "C"
     env->ReleaseStringUTFChars(permission, perm);
   }
 
-  JNIEXPORT void JNICALL
+  JNIEXPORT jboolean JNICALL
   Java_com_github_mowerick_ros2_android_util_NativeBridge_nativeStartRos(
       JNIEnv *env, jobject /*thiz*/, jint domain_id, jstring network_interface, jstring device_id)
   {
     if (!g_app)
-      return;
+      return JNI_FALSE;
 
     const char *iface = env->GetStringUTFChars(network_interface, nullptr);
     const char *dev_id = env->GetStringUTFChars(device_id, nullptr);
-    g_app->StartRos(domain_id, std::string(iface), std::string(dev_id));
+    bool result = g_app->StartRos(domain_id, std::string(iface), std::string(dev_id));
     env->ReleaseStringUTFChars(network_interface, iface);
     env->ReleaseStringUTFChars(device_id, dev_id);
+    return result ? JNI_TRUE : JNI_FALSE;
   }
 
   JNIEXPORT jobjectArray JNICALL

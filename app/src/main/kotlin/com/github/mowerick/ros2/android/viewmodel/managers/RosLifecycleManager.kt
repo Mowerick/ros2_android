@@ -66,10 +66,15 @@ class RosLifecycleManager(
 
         val sanitizedDeviceId = sanitizeDeviceId(deviceId)
         _deviceId.value = sanitizedDeviceId
-        NativeBridge.nativeStartRos(domainId, networkInterface, sanitizedDeviceId)
-        _rosDomainId.value = domainId
-        _selectedNetworkInterface.value = networkInterface
-        _rosStarted.value = true
+        val success = NativeBridge.nativeStartRos(domainId, networkInterface, sanitizedDeviceId)
+        if (success) {
+            _rosDomainId.value = domainId
+            _selectedNetworkInterface.value = networkInterface
+            _rosStarted.value = true
+        } else {
+            android.util.Log.e("RosLifecycleManager", "ROS startup failed")
+            releaseMulticastLock()
+        }
     }
 
     fun releaseMulticastLock() {
