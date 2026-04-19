@@ -19,7 +19,7 @@ class RosInterface {
   RosInterface(const std::string& device_id);
   ~RosInterface();
 
-  void Initialize(size_t ros_domain_id);
+  bool Initialize(size_t ros_domain_id);
 
   bool Initialized() const;
 

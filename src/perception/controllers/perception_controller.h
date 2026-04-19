@@ -101,7 +101,7 @@ class PerceptionController : public SensorDataProvider {
 
   /**
    * Get debug frame (JPEG-encoded)
-   * @param frame_id "rgb_annotated" or "depth_annotated"
+   * @param frame_id "rgb_annotated"
    * @param out_jpeg Output JPEG data
    * @return true if frame available, false otherwise
    */
@@ -130,7 +130,7 @@ class PerceptionController : public SensorDataProvider {
 
   // Debug frame storage for JNI visualization
   std::mutex debug_frames_mutex_;
-  std::map<std::string, std::vector<uint8_t>> debug_frames_jpeg_;  // "rgb_annotated", "depth_annotated" → JPEG data
+  std::map<std::string, std::vector<uint8_t>> debug_frames_jpeg_;  // "rgb_annotated" → JPEG data
   std::atomic<bool> visualization_enabled_{false};
 
   // ============================================================================

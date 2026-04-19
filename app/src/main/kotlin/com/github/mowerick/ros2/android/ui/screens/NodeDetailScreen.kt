@@ -21,15 +21,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
@@ -52,7 +46,6 @@ fun NodeDetailScreen(
     detectedOnNetwork: Boolean = false,
     visualizationEnabled: Boolean = false,
     debugFrameRgb: Bitmap? = null,
-    debugFrameDepth: Bitmap? = null,
     onEnableVisualization: () -> Unit = {},
     onDisableVisualization: () -> Unit = {},
     onFullscreenClick: () -> Unit = {},
@@ -219,61 +212,22 @@ fun NodeDetailScreen(
 
                 if (visualizationEnabled) {
                     item {
-                        var selectedTab by remember { mutableStateOf(0) }
-
                         Card(modifier = Modifier.fillMaxWidth()) {
-                            Column {
-                                TabRow(selectedTabIndex = selectedTab) {
-                                    Tab(
-                                        selected = selectedTab == 0,
-                                        onClick = { selectedTab = 0 },
-                                        text = { Text("RGB + Tracks") }
-                                    )
-                                    Tab(
-                                        selected = selectedTab == 1,
-                                        onClick = { selectedTab = 1 },
-                                        text = { Text("Depth") }
-                                    )
-                                }
-
-                                when (selectedTab) {
-                                    0 -> {
-                                        if (debugFrameRgb != null) {
-                                            Image(
-                                                bitmap = debugFrameRgb.asImageBitmap(),
-                                                contentDescription = "RGB with YOLO + Deep SORT",
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .aspectRatio(debugFrameRgb.width.toFloat() / debugFrameRgb.height),
-                                                contentScale = ContentScale.Fit
-                                            )
-                                        } else {
-                                            Text(
-                                                "Waiting for RGB frame...",
-                                                modifier = Modifier.padding(16.dp),
-                                                style = MaterialTheme.typography.bodyMedium
-                                            )
-                                        }
-                                    }
-                                    1 -> {
-                                        if (debugFrameDepth != null) {
-                                            Image(
-                                                bitmap = debugFrameDepth.asImageBitmap(),
-                                                contentDescription = "Depth colormap with YOLO",
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .aspectRatio(debugFrameDepth.width.toFloat() / debugFrameDepth.height),
-                                                contentScale = ContentScale.Fit
-                                            )
-                                        } else {
-                                            Text(
-                                                "Waiting for depth frame...",
-                                                modifier = Modifier.padding(16.dp),
-                                                style = MaterialTheme.typography.bodyMedium
-                                            )
-                                        }
-                                    }
-                                }
+                            if (debugFrameRgb != null) {
+                                Image(
+                                    bitmap = debugFrameRgb.asImageBitmap(),
+                                    contentDescription = "RGB with YOLO + Deep SORT",
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .aspectRatio(debugFrameRgb.width.toFloat() / debugFrameRgb.height),
+                                    contentScale = ContentScale.Fit
+                                )
+                            } else {
+                                Text(
+                                    "Waiting for RGB frame...",
+                                    modifier = Modifier.padding(16.dp),
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
                             }
                         }
                     }

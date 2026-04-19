@@ -36,7 +36,7 @@ namespace ros2_android
     /**
      * Post debug frame update notification
      * Throttled to avoid overwhelming JNI callback
-     * @param frame_id Frame identifier ("rgb_annotated" or "depth_annotated")
+     * @param frame_id Frame identifier ("rgb_annotated")
      * @param min_interval Minimum time between notifications (default: 100ms = 10 FPS)
      */
     void Post(const std::string &frame_id,
@@ -79,7 +79,7 @@ namespace ros2_android
 
   /**
    * Helper function to post debug frame update
-   * @param frame_id "rgb_annotated" or "depth_annotated"
+   * @param frame_id "rgb_annotated"
    */
   inline void PostDebugFrameUpdate(const std::string &frame_id)
   {

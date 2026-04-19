@@ -24,7 +24,7 @@ object NativeBridge {
     external fun nativeSetNetworkInterfaces(interfaces: Array<String>)
     external fun nativeOnPermissionResult(permission: String, granted: Boolean)
 
-    external fun nativeStartRos(domainId: Int, networkInterface: String, deviceId: String)
+    external fun nativeStartRos(domainId: Int, networkInterface: String, deviceId: String): Boolean
     external fun nativeGetSensorList(): Array<SensorInfo>
     external fun nativeGetSensorData(uniqueId: String): SensorReading?
     external fun nativeGetCameraList(): Array<CameraInfo>
@@ -78,6 +78,15 @@ object NativeBridge {
     external fun nativeEnablePerceptionVisualization(enable: Boolean)
     external fun nativeGetDebugFrame(frameId: String): Bitmap?
     external fun nativeSetDebugFrameCallback()
+
+    // Beetle Predator (built-in camera + GPS + NCNN detection)
+    external fun enableBeetlePredator(modelsPath: String)
+    external fun disableBeetlePredator()
+    external fun isBeetlePredatorEnabled(): Boolean
+    external fun setBeetlePredatorLabelFilter(mask: Int)
+    external fun enableBeetlePredatorVisualization(enable: Boolean)
+    external fun getBeetlePredatorDebugFrame(): Bitmap?
+    external fun getBeetlePredatorDetectionCount(): Int
 
     fun setNotificationCallback(callback: (severity: String, message: String) -> Unit) {
         notificationCallback = callback

@@ -5,7 +5,8 @@
         android:enableOnBackInvokedCallback="true"
         android:icon="@drawable/ic_launcher"
         android:label="@string/app_name"
-        android:supportsRtl="true">
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Ros2Android">
         <activity
             android:name=".MainActivity"
             android:launchMode="singleTask"

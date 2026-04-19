@@ -53,10 +53,9 @@ PerceptionController::PerceptionController(RosInterface &ros,
   std::string reid_param = models_path + "/osnet_ain_x1_0.ncnn.param";
   std::string reid_bin = models_path + "/osnet_ain_x1_0.ncnn.bin";
 
-  // Initialize NCNN detector with Vulkan auto-detection
-  // Will automatically fall back to CPU if Vulkan is not available
+  // Initialize NCNN detector (CPU NEON inference)
   detector_ = std::make_unique<perception::ObjectDetectionController>(
-      yolo_param, yolo_bin, reid_param, reid_bin, true);
+      yolo_param, yolo_bin, reid_param, reid_bin);
 
   if (!detector_->IsReady())
   {
@@ -152,6 +151,10 @@ void PerceptionController::Enable()
     return;
   }
 
+  // Reliable QoS required for large messages over WiFi - best_effort disables
+  // RTPS fragment retransmission, so any lost fragment discards the entire
+  // sample (impossible for 33MB PointCloud2 with ~25k fragments). KeepLast(10)
+  // provides buffer depth for concurrent RTPS fragment reassembly.
   auto qos = rclcpp::QoS(rclcpp::KeepLast(10))
                  .reliable()
                  .durability_volatile();
@@ -257,7 +260,7 @@ void PerceptionController::OnRGB(
 void PerceptionController::OnDepth(
     const sensor_msgs::msg::Image::SharedPtr msg)
 {
-
+  LOGD("OnDepth: Received depth message (%ux%u)", msg->width, msg->height);
   std::lock_guard<std::mutex> lock(latest_mutex_);
   latest_depth_ = msg;
 
@@ -271,7 +274,7 @@ void PerceptionController::OnDepth(
 void PerceptionController::OnPointCloud(
     const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
-
+  LOGD("OnPointCloud: Received point cloud message (%ux%u)", msg->width, msg->height);
   std::lock_guard<std::mutex> lock(latest_mutex_);
   latest_cloud_ = msg;
 
@@ -539,22 +542,6 @@ void PerceptionController::ProcessFrame(
         }
         PostDebugFrameUpdate("rgb_annotated");
         LOGD("Stored RGB annotated frame (%zu KB)", rgb_jpeg.size() / 1024);
-      }
-    }
-
-    // Encode and store depth annotated frame (if available)
-    if (result.has_depth_visualization && !result.annotated_depth_bgr.empty())
-    {
-      auto depth_jpeg = encode_jpeg(result.annotated_depth_bgr.data(),
-                                    result.depth_width, result.depth_height);
-      if (!depth_jpeg.empty())
-      {
-        {
-          std::lock_guard<std::mutex> lock(debug_frames_mutex_);
-          debug_frames_jpeg_["depth_annotated"] = std::move(depth_jpeg);
-        }
-        PostDebugFrameUpdate("depth_annotated");
-        LOGD("Stored depth annotated frame (%zu KB)", depth_jpeg.size() / 1024);
       }
     }
   }
