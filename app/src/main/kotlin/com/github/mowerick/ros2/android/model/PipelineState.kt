@@ -8,44 +8,23 @@ package com.github.mowerick.ros2.android.model
  * nodes can be started next.
  */
 enum class PipelineState {
-    /**
-     * Initial state - no nodes running.
-     * User must trigger topic probing to begin.
-     */
+    /** Initial state - no nodes running. */
     STOPPED,
 
-    /**
-     * Actively probing for ZED camera topics on the network.
-     */
+    /** Actively probing for ZED camera topics on the network. */
     ZED_PROBING,
 
-    /**
-     * ZED camera topics discovered on network.
-     * Object detection can now be started (locally or detected externally).
-     */
+    /** ZED camera topics discovered on network. Object detection can now be started. */
     ZED_AVAILABLE,
 
-    /**
-     * Object detection is running (locally or on another device).
-     * Publishes: /cpb_beetle_center, /cpb_larva_center, /cpb_eggs_center, etc.
-     * Target manager can now be started.
-     */
+    /** Object detection is running. Target manager can now be started. */
     DETECTION_RUNNING,
 
-    /**
-     * Target manager is running (locally or on another device).
-     * Publishes: /arm_position_goal
-     * Arm commander can now be started.
-     */
+    /** Target manager is running. micro-ROS agent can now be started. */
     TARGET_RUNNING,
 
-    /**
-     * Arm commander and micro-ROS agent running as co-dependent pair.
-     * Bidirectional data flow: arm_commander publishes /PointNShoot,
-     * micro-ROS agent bridges to microcontroller which publishes
-     * /PointNShoot_ACK, _DONE, _NACK feedback back to arm_commander.
-     */
-    COMMAND_ACTIVE;
+    /** micro-ROS agent bridging ESP32 via USB serial. Full pipeline active. */
+    AGENT_RUNNING;
 
     fun getDescription(): String = when (this) {
         STOPPED -> "Pipeline inactive"
@@ -53,7 +32,7 @@ enum class PipelineState {
         ZED_AVAILABLE -> "ZED camera available"
         DETECTION_RUNNING -> "Object detection active"
         TARGET_RUNNING -> "Target manager active"
-        COMMAND_ACTIVE -> "Full pipeline active"
+        AGENT_RUNNING -> "Full pipeline active"
     }
 
     companion object {
@@ -62,8 +41,8 @@ enum class PipelineState {
             ZED_PROBING        to Pair(STOPPED,             ZED_AVAILABLE),
             ZED_AVAILABLE      to Pair(ZED_PROBING,         DETECTION_RUNNING),
             DETECTION_RUNNING  to Pair(ZED_AVAILABLE,       TARGET_RUNNING),
-            TARGET_RUNNING     to Pair(DETECTION_RUNNING,   COMMAND_ACTIVE),
-            COMMAND_ACTIVE     to Pair(TARGET_RUNNING,      null),
+            TARGET_RUNNING     to Pair(DETECTION_RUNNING,   AGENT_RUNNING),
+            AGENT_RUNNING      to Pair(TARGET_RUNNING,      null),
         )
 
         fun nextState(current: PipelineState): PipelineState? = stateTransitions[current]?.second

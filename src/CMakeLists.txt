@@ -100,9 +100,6 @@ add_library(android-ros SHARED
   # Targeting controller (laser positioning)
   targeting/controllers/target_manager_controller.cc
 
-  # Arm commander controller (pan/tilt arm ACK/NACK protocol)
-  arm_commander/controllers/arm_commander_controller.cc
-
   # micro-ROS Agent (XRCE-DDS serial bridge to ESP32)
   microros_agent/jni_serial_transport.cc
   microros_agent/controllers/microros_agent_controller.cc

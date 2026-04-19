@@ -64,11 +64,6 @@ object NativeBridge {
     external fun disableTargetManager()
     external fun isTargetManagerEnabled(): Boolean
 
-    // Arm Commander management
-    external fun enableArmCommander()
-    external fun disableArmCommander()
-    external fun isArmCommanderEnabled(): Boolean
-
     // micro-ROS Agent management
     external fun enableMicroRosAgent(deviceId: String, baudrate: Int): Boolean
     external fun disableMicroRosAgent()

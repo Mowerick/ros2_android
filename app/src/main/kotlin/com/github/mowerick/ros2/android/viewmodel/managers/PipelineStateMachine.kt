@@ -96,7 +96,6 @@ class PipelineStateMachine(
             )
             "object_detection" -> _pipelineState.value >= PipelineState.ZED_AVAILABLE
             "target_manager" -> _pipelineState.value >= PipelineState.DETECTION_RUNNING
-            "arm_commander" -> _pipelineState.value >= PipelineState.TARGET_RUNNING
             "micro_ros_agent" -> _pipelineState.value >= PipelineState.TARGET_RUNNING
             else -> false
         }
@@ -119,19 +118,18 @@ class PipelineStateMachine(
                     "target_manager" -> {
                         NativeBridge.enableTargetManager()
                     }
-                    "arm_commander" -> { NativeBridge.enableArmCommander() }
                     "micro_ros_agent" -> {
                         val deviceId = microRosDeviceId
                         if (deviceId == null) {
                             throw IllegalStateException("No ESP32 device connected for micro-ROS Agent")
                         }
-                        NativeBridge.enableMicroRosAgent(deviceId, 115200)
+                        NativeBridge.enableMicroRosAgent(deviceId, 460800)
                     }
                 }
                 updateNodeState(nodeId) { it.copy(runningLocally = true, isProbing = false, isStarting = false) }
 
-                // Only advance FSM if not already at COMMAND_ACTIVE
-                if (_pipelineState.value != PipelineState.COMMAND_ACTIVE) {
+                // Only advance FSM if not already at AGENT_RUNNING
+                if (_pipelineState.value != PipelineState.AGENT_RUNNING) {
                     advanceState()
                 }
                 updatePolling()
@@ -162,7 +160,6 @@ class PipelineStateMachine(
                             NativeBridge.disableTargetManager()
                         }
                     }
-                    "arm_commander" -> { NativeBridge.disableArmCommander() }
                     "micro_ros_agent" -> {
                         if (_nodeStates.value["micro_ros_agent"]?.runningLocally == true) {
                             NativeBridge.disableMicroRosAgent()
@@ -172,15 +169,7 @@ class PipelineStateMachine(
 
                 stopDownstreamNodes(nodeId)
                 removeNodeState(nodeId)
-
-                // Only rollback FSM if both command bridge nodes are stopped
-                val armState = _nodeStates.value["arm_commander"]
-                val agentState = _nodeStates.value["micro_ros_agent"]
-                val armActive = armState?.runningLocally == true || armState?.detectedOnNetwork == true
-                val agentActive = agentState?.runningLocally == true || agentState?.detectedOnNetwork == true
-                if (!armActive && !agentActive) {
-                    rollbackState()
-                }
+                rollbackState()
                 updatePolling()
             } catch (e: Exception) {
                 android.util.Log.e("PipelineStateMachine", "Failed to stop node $nodeId", e)
@@ -212,7 +201,7 @@ class PipelineStateMachine(
                 when (nodeId) {
                     "object_detection" -> NativeBridge.disablePerception()
                     "target_manager" -> NativeBridge.disableTargetManager()
-                    "arm_commander" -> NativeBridge.disableArmCommander()
+                    "micro_ros_agent" -> NativeBridge.disableMicroRosAgent()
                 }
             }
         }
@@ -329,8 +318,8 @@ class PipelineStateMachine(
 
     private fun stopDownstreamNodes(nodeId: String) {
         val downstreamOrder = when (nodeId) {
-            "object_detection" -> listOf("target_manager", "arm_commander", "micro_ros_agent")
-            "target_manager" -> listOf("arm_commander", "micro_ros_agent")
+            "object_detection" -> listOf("target_manager", "micro_ros_agent")
+            "target_manager" -> listOf("micro_ros_agent")
             else -> emptyList()
         }
 
@@ -341,6 +330,7 @@ class PipelineStateMachine(
                 when (downstream) {
                     "object_detection" -> NativeBridge.disablePerception()
                     "target_manager" -> NativeBridge.disableTargetManager()
+                    "micro_ros_agent" -> NativeBridge.disableMicroRosAgent()
                 }
             }
             // Clear all state (running, probing, detected) for downstream nodes
@@ -401,39 +391,14 @@ class PipelineStateMachine(
                 isExternal = false
             ),
             PipelineNode(
-                id = "arm_commander",
-                name = "Arm Commander",
-                description = "State machine for pan/tilt arm control with ACK/NACK protocol. Manages command retries, timeouts, and feedback synchronization with microcontroller.",
-                subscribesTo = listOf(
-                    TopicInfo("/arm_position_goal", "std_msgs/msg/Float32MultiArray"),
-                    TopicInfo("/PointNShoot_ACK", "std_msgs/msg/Float32"),
-                    TopicInfo("/PointNShoot_DONE", "std_msgs/msg/Float32"),
-                    TopicInfo("/PointNShoot_NACK", "std_msgs/msg/Float32")
-                ),
-                publishesTo = listOf(
-                    TopicInfo("/PointNShoot", "std_msgs/msg/Float32MultiArray"),
-                    TopicInfo("/arm_position_feedback", "std_msgs/msg/String")
-                ),
-                upstreamNodeId = "target_manager",
-                isExternal = false
-            ),
-            PipelineNode(
                 id = "micro_ros_agent",
                 name = "micro-ROS Agent",
-                description = "Bridges ROS 2 DDS network to ESP32-S3 microcontroller via USB serial (115200 baud). 3-axis stepper control (pitch, yaw, slide) with laser. Forwards /PointNShoot and /Homecoming commands, receives ACK/DONE/NACK feedback and diagnostics.",
+                description = "Bridges ROS 2 DDS network to ESP32-S3 pan-and-tilt controller via USB CDC-ACM serial (460800 baud). XRCE-DDS protocol with HDLC framing. ESP32 subscribes to /ESP32_Command and publishes /ESP32_Feedback for 3-axis stepper motor control (pitch, yaw, slide).",
                 subscribesTo = listOf(
-                    TopicInfo("/PointNShoot", "std_msgs/msg/Float32MultiArray"),
-                    TopicInfo("/Homecoming", "std_msgs/msg/Float32")
+                    TopicInfo("/ESP32_Command", "vermin_collector_ros_msgs/msg/Command")
                 ),
                 publishesTo = listOf(
-                    TopicInfo("/PointNShoot_ACK", "std_msgs/msg/Float32"),
-                    TopicInfo("/PointNShoot_DONE", "std_msgs/msg/Float32"),
-                    TopicInfo("/PointNShoot_NACK", "std_msgs/msg/Float32"),
-                    TopicInfo("/Homecoming_ACK", "std_msgs/msg/Float32"),
-                    TopicInfo("/Homecoming_DONE", "std_msgs/msg/Float32"),
-                    TopicInfo("/Homecoming_NACK", "std_msgs/msg/Float32"),
-                    TopicInfo("/heartbeat_from_tip_tilt_mount", "std_msgs/msg/Int32"),
-                    TopicInfo("/loggs_from_tip_tilt_mount", "std_msgs/msg/String")
+                    TopicInfo("/ESP32_Feedback", "vermin_collector_ros_msgs/msg/Feedback")
                 ),
                 upstreamNodeId = "target_manager",
                 isExternal = false
