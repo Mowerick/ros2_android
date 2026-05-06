@@ -11,4 +11,8 @@
     <!-- CH341 USB-to-Serial (alternative chip) -->
     <usb-device vendor-id="6790" product-id="21795" />
     <!-- Hex: 0x1a86 = 6790, 0x5523 = 21795 -->
+
+    <!-- ESP32-S3 native USB CDC-ACM (micro-ROS Agent) -->
+    <usb-device vendor-id="12346" product-id="4097" />
+    <!-- Hex: 0x303A = 12346, 0x1001 = 4097 -->
 </resources>

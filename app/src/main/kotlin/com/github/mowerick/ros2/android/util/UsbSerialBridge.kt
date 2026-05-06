@@ -83,11 +83,11 @@ object UsbSerialBridge {
             return null
         }
 
-        // Convert USB path to uniqueId format
-        // Native code passes: "/dev/bus/usb/001/002"
-        // We need:           "lidar__dev_bus_usb_001_002"
-        val uniqueId = "lidar_${deviceId.replace("/", "_")}"
-        Log.d(TAG, "Converted path '$deviceId' to uniqueId '$uniqueId'")
+        // Convert USB path to uniqueId format if needed.
+        // LiDAR (YDLIDAR SDK) passes a raw path: "/dev/bus/usb/001/002" -> "lidar__dev_bus_usb_001_002"
+        // micro-ROS agent passes the uniqueId directly: "esp32__dev_bus_usb_001_002" (no slashes)
+        val uniqueId = if (deviceId.contains('/')) "lidar_${deviceId.replace("/", "_")}" else deviceId
+        Log.d(TAG, "Resolved path '$deviceId' to uniqueId '$uniqueId'")
 
         // Check if already open
         activeDevices[uniqueId]?.let {
@@ -137,8 +137,8 @@ object UsbSerialBridge {
     fun closeDevice(deviceId: String) {
         Log.i(TAG, "Closing device: $deviceId")
 
-        // Convert path to uniqueId (same as openDevice)
-        val uniqueId = "lidar_${deviceId.replace("/", "_")}"
+        // Convert path to uniqueId (same logic as openDevice)
+        val uniqueId = if (deviceId.contains('/')) "lidar_${deviceId.replace("/", "_")}" else deviceId
 
         val buffered = activeDevices.remove(uniqueId)
         if (buffered != null) {

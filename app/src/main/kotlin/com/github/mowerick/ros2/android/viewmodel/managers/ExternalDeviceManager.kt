@@ -12,12 +12,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Manages external devices (LiDAR via USB Serial)
+ * Manages external devices (LiDAR via USB Serial, ESP32 via CDC-ACM)
  */
 class ExternalDeviceManager(
     private val usbSerialManager: UsbSerialManager,
     private val coroutineScope: CoroutineScope,
-    private val onNotification: (String) -> Unit
+    private val onNotification: (String) -> Unit,
+    private val onEsp32Detected: (String) -> Unit = {}
 ) {
 
     private val _externalDevices = MutableStateFlow<List<ExternalDeviceInfo>>(emptyList())
@@ -135,23 +136,23 @@ class ExternalDeviceManager(
 
     fun scanForExternalDevices() {
         coroutineScope.launch(Dispatchers.IO) {
-            android.util.Log.i("ExternalDeviceManager", "Scanning for USB Serial LIDAR devices...")
+            android.util.Log.i("ExternalDeviceManager", "Scanning for USB Serial LIDAR and ESP32 devices...")
 
-            val usbDevices = usbSerialManager.detectLidarDevices()
+            val lidarDevices = usbSerialManager.detectLidarDevices()
+            val esp32Devices = usbSerialManager.detectEsp32Devices()
 
-            android.util.Log.i("ExternalDeviceManager", "Found ${usbDevices.size} USB LIDAR device(s)")
-
-            if (usbDevices.isEmpty()) {
-                withContext(Dispatchers.Main) {
-                    onNotification("No LIDAR devices found. Ensure device is connected via USB.")
-                }
-            } else {
-                withContext(Dispatchers.Main) {
-                    onNotification("Found ${usbDevices.size} LIDAR device(s)")
-                }
-            }
+            android.util.Log.i("ExternalDeviceManager", "Found ${lidarDevices.size} USB LIDAR device(s), ${esp32Devices.size} ESP32 device(s)")
 
             withContext(Dispatchers.Main) {
+                if (lidarDevices.isEmpty() && esp32Devices.isEmpty()) {
+                    onNotification("No USB devices found. Ensure device is connected via USB.")
+                } else {
+                    if (lidarDevices.isNotEmpty()) onNotification("Found ${lidarDevices.size} LIDAR device(s)")
+                    if (esp32Devices.isNotEmpty()) {
+                        esp32Devices.forEach { onEsp32Detected(it.uniqueId) }
+                        onNotification("ESP32-S3 detected for micro-ROS Agent")
+                    }
+                }
                 refreshExternalDevices()
             }
         }
@@ -161,6 +162,19 @@ class ExternalDeviceManager(
         coroutineScope.launch(Dispatchers.IO) {
             android.util.Log.i("ExternalDeviceManager", "Handling USB device attachment: ${device.deviceName}")
 
+            // Check if it's an ESP32-S3 for micro-ROS Agent
+            if (usbSerialManager.isEsp32Device(device.vendorId, device.productId)) {
+                val uniqueId = "esp32_${device.deviceName.replace("/", "_")}"
+                android.util.Log.i("ExternalDeviceManager", "USB device identified as ESP32-S3: $uniqueId")
+
+                withContext(Dispatchers.Main) {
+                    onEsp32Detected(uniqueId)
+                    onNotification("ESP32-S3 detected for micro-ROS Agent")
+                }
+                return@launch
+            }
+
+            // Check if it's a LiDAR device
             val detectedDevices = usbSerialManager.detectLidarDevices()
             val matchingDevice = detectedDevices.find {
                 it.vendorId == device.vendorId && it.productId == device.productId
@@ -178,7 +192,7 @@ class ExternalDeviceManager(
                     }
                 }
             } else {
-                android.util.Log.i("ExternalDeviceManager", "USB device is not a recognized LIDAR")
+                android.util.Log.i("ExternalDeviceManager", "USB device is not a recognized device")
             }
         }
     }

@@ -40,11 +40,11 @@ repositories:
   libyuv:
     type: git
     url: https://chromium.googlesource.com/libyuv/libyuv
-    version: main
+    version: 30809ff64a9ca5e45f86439c0d474c2d3eef3d05
   libjpeg-turbo:
     type: git
     url: https://github.com/libjpeg-turbo/libjpeg-turbo.git
-    version: main
+    version: 3.1.3
   mimick_vendor:
     type: git
     url: https://github.com/ros2/mimick_vendor.git
@@ -52,7 +52,7 @@ repositories:
   osrf_testing_tools_cpp:
     type: git
     url: https://github.com/osrf/osrf_testing_tools_cpp.git
-    version: master
+    version: aa5d4bbc488640e4b4a0d87f89b6bb27116ac9b9
   rcl:
     type: git
     url: https://github.com/ros2/rcl.git
@@ -121,10 +121,6 @@ repositories:
     type: git
     url: https://github.com/YDLIDAR/YDLidar-SDK.git
     version: d37ace9
-  ros2_android_perception:
-    type: git
-    url: git@github.com:ros2-bachelor-thesis/ros2_android_perception.git
-    version: main
   fast-cdr:
     type: git
     url: https://github.com/eProsima/Fast-CDR.git
@@ -149,6 +145,10 @@ repositories:
     type: git
     url: https://github.com/eProsima/Micro-CDR.git
     version: v2.0.1
+  ros2_android_perception:
+    type: git
+    url: git@github.com:ros2-bachelor-thesis/ros2_android_perception.git
+    version: v1.0.0
   vermin_collector_ros_msgs:
     type: git
     url: ssh://vcs@phabricator.ict.tuwien.ac.at/source/Vermin_Collector_ROS_Msgs.git

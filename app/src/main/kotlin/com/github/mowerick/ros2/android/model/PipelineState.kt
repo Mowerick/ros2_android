@@ -31,7 +31,7 @@ enum class PipelineState {
      * micro-ROS agent running, bridging ESP32_Command/ESP32_Feedback
      * between ROS 2 DDS network and ESP32 microcontroller via USB serial.
      */
-    COMMAND_ACTIVE;
+    AGENT_RUNNING;
 
     fun getDescription(): String = when (this) {
         STOPPED -> "Pipeline inactive"

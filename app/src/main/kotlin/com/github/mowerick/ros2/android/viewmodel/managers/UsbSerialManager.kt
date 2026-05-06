@@ -115,11 +115,11 @@ class UsbSerialManager(private val context: Context) {
             }
         }
 
-        // Find the USB device
+        // Find the USB device - match against both lidar_ and esp32_ prefixed uniqueIds
         val availableDrivers = UsbSerialProber.getDefaultProber().findAllDrivers(usbManager)
         val driver = availableDrivers.find { driver ->
-            val deviceId = "lidar_${driver.device.deviceName.replace("/", "_")}"
-            deviceId == uniqueId
+            val name = driver.device.deviceName.replace("/", "_")
+            "lidar_$name" == uniqueId || "esp32_$name" == uniqueId
         }
 
         if (driver == null) {
@@ -209,6 +209,52 @@ class UsbSerialManager(private val context: Context) {
      */
     fun getPort(uniqueId: String): UsbSerialPort? {
         return activeConnections[uniqueId]
+    }
+
+    /**
+     * Detect connected ESP32-S3 CDC-ACM devices for micro-ROS Agent
+     *
+     * @return List of detected ESP32 devices
+     */
+    fun detectEsp32Devices(): List<ExternalDeviceInfo> {
+        Log.i(TAG, "Scanning for ESP32 CDC-ACM devices...")
+
+        val availableDrivers = UsbSerialProber.getDefaultProber().findAllDrivers(usbManager)
+        val esp32Devices = mutableListOf<ExternalDeviceInfo>()
+
+        for (driver in availableDrivers) {
+            val device = driver.device
+            if (isEsp32Device(device.vendorId, device.productId)) {
+                val uniqueId = "esp32_${device.deviceName.replace("/", "_")}"
+                esp32Devices.add(ExternalDeviceInfo(
+                    uniqueId = uniqueId,
+                    name = "ESP32-S3 (micro-ROS)",
+                    deviceType = ExternalDeviceType.MICROCONTROLLER,
+                    usbPath = device.deviceName,
+                    vendorId = device.vendorId,
+                    productId = device.productId,
+                    topicName = "ESP32_Command",
+                    topicType = "vermin_collector_ros_msgs/msg/Command",
+                    connected = false,
+                    enabled = false
+                ))
+                Log.i(TAG, "Detected ESP32-S3: ${device.deviceName}")
+            }
+        }
+
+        if (esp32Devices.isEmpty()) {
+            Log.d(TAG, "No ESP32 devices detected")
+        }
+
+        return esp32Devices
+    }
+
+    /**
+     * Check if device is an ESP32-S3 native USB CDC-ACM
+     */
+    fun isEsp32Device(vendorId: Int, productId: Int): Boolean {
+        // Espressif ESP32-S3 native USB
+        return vendorId == 0x303A && productId == 0x1001
     }
 
     /**

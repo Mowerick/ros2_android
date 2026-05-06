@@ -64,20 +64,22 @@ class RosViewModel(
     private val rosLifecycleManager = RosLifecycleManager(applicationContext, networkProvider)
     private val sensorCameraManager = SensorCameraManager(viewModelScope) { isLocationServiceEnabled }
     private val usbSerialManager = UsbSerialManager(applicationContext)
-    private val externalDeviceManager = ExternalDeviceManager(
-        usbSerialManager,
-        viewModelScope
-    ) { message -> addNotification(message, Severity.WARNING) }
-    private val perceptionManager = PerceptionManager(
-        applicationContext,
-        viewModelScope
-    ) { message -> addNotification(message, Severity.ERROR) }
     private val pipelineStateMachine = PipelineStateMachine(
         applicationContext,
         viewModelScope,
         { message -> addNotification(message, Severity.ERROR) },
         { enabled -> perceptionManager.setEnabled(enabled) }
     )
+    private val externalDeviceManager = ExternalDeviceManager(
+        usbSerialManager,
+        viewModelScope,
+        { message -> addNotification(message, Severity.WARNING) },
+        { deviceId -> pipelineStateMachine.microRosDeviceId = deviceId }
+    )
+    private val perceptionManager = PerceptionManager(
+        applicationContext,
+        viewModelScope
+    ) { message -> addNotification(message, Severity.ERROR) }
 
     // GPS Manager (stays here - too coupled with permissions/settings)
     private val gpsManager = GpsManager(applicationContext)

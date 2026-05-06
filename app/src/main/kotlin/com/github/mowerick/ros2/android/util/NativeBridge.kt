@@ -63,6 +63,12 @@ object NativeBridge {
     external fun enableTargetManager()
     external fun disableTargetManager()
     external fun isTargetManagerEnabled(): Boolean
+    external fun setTargetManagerFixedPositionMode(enabled: Boolean)
+
+    // micro-ROS Agent management
+    external fun enableMicroRosAgent(deviceId: String, baudrate: Int): Boolean
+    external fun disableMicroRosAgent()
+    external fun isMicroRosAgentEnabled(): Boolean
 
     // Perception debug visualization
     external fun nativeEnablePerceptionVisualization(enable: Boolean)

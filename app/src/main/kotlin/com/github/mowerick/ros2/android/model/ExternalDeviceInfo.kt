@@ -17,5 +17,6 @@ data class ExternalDeviceInfo(
 
 enum class ExternalDeviceType {
     LIDAR,
-    USB_CAMERA
+    USB_CAMERA,
+    MICROCONTROLLER
 }
