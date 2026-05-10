@@ -152,4 +152,4 @@ repositories:
   vermin_collector_ros_msgs:
     type: git
     url: ssh://vcs@phabricator.ict.tuwien.ac.at/source/Vermin_Collector_ROS_Msgs.git
-    version: master
+    version: 90a327cfd21bec3e921317d23114b7fc06e3d719
