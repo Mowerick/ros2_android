@@ -755,21 +755,21 @@ void TargetManagerController::TickReady() {
   }
   const auto& fb = *latest_feedback_;
 
-  // Motor gate just opened: re-send SETUP to enable motors
+  // Motor gate just opened: re-send SETUP to enable motors.
+  // Stays in READY - SETUP doesn't produce a MOVING response.
   if (MotorGateOpen() &&
       desired_setup_.en_motors != std::array<uint8_t, 3>{1, 1, 1}) {
     SendCurrentSetup();
-    state_ = TargetManagerState::SENT_CMD;
     return;
   }
 
-  // Drift detection: firmware configuration drifted from desired
+  // Drift detection: firmware configuration drifted from desired.
+  // Silent re-issue - stays in READY, no state change.
   if (fb.frequencies != desired_setup_.frequencies ||
       fb.en_motors != desired_setup_.en_motors ||
       fb.resolution != desired_setup_.resolution) {
     LOGW("Firmware setup drift detected, re-issuing SETUP");
     SendCurrentSetup();
-    state_ = TargetManagerState::SENT_CMD;
     return;
   }
 
