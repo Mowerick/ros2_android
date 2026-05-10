@@ -2,8 +2,6 @@
 
 #include <sstream>
 
-#include <uxr/agent/transport/custom/CustomAgent.hpp>
-
 #include "core/log.h"
 #include "core/notification_queue.h"
 #include "microros_agent/jni_serial_transport.h"
@@ -98,8 +96,13 @@ void MicroRosAgentController::Disable() {
     agent_thread_.join();
   }
 
-  // Clean up in order
+  // Clean up in order. Function members must be cleared after agent_ so that
+  // fini() can still invoke them during stop() above.
   agent_.reset();
+  agent_init_func_ = nullptr;
+  agent_fini_func_ = nullptr;
+  agent_send_func_ = nullptr;
+  agent_recv_func_ = nullptr;
   endpoint_.reset();
   if (transport_) {
     transport_->Fini();
@@ -132,32 +135,29 @@ void MicroRosAgentController::AgentThreadFunc() {
   endpoint_ = std::make_unique<eprosima::uxr::CustomEndPoint>();
   endpoint_->add_member<uint32_t>("index");
 
-  // Create CustomAgent callback functions
-  // These are stored as std::function references - they must outlive the agent
-  eprosima::uxr::CustomAgent::InitFunction init_func =
-      [this]() -> bool { return true; };  // Already initialized above
-
-  eprosima::uxr::CustomAgent::FiniFunction fini_func =
-      [this]() -> bool { return true; };  // Cleaned up in Disable()
-
-  eprosima::uxr::CustomAgent::SendMsgFunction send_func =
-      [this](const eprosima::uxr::CustomEndPoint* dest, uint8_t* buf,
-             size_t len, eprosima::uxr::TransportRc& rc) -> ssize_t {
-        return transport_->SendMsg(dest, buf, len, rc);
-      };
-
-  eprosima::uxr::CustomAgent::RecvMsgFunction recv_func =
-      [this](eprosima::uxr::CustomEndPoint* src, uint8_t* buf, size_t len,
-             int timeout, eprosima::uxr::TransportRc& rc) -> ssize_t {
-        return transport_->RecvMsg(src, buf, len, timeout, rc);
-      };
+  // Assign CustomAgent callback functions to members. CustomAgent stores these
+  // as references (not copies), so they must outlive agent_->stop() in
+  // Disable(). Using locals here would cause a dangling reference crash when
+  // stop() calls fini() after AgentThreadFunc() returns.
+  agent_init_func_ = [this]() -> bool { return true; };
+  agent_fini_func_ = [this]() -> bool { return true; };
+  agent_send_func_ = [this](const eprosima::uxr::CustomEndPoint* dest,
+                             uint8_t* buf, size_t len,
+                             eprosima::uxr::TransportRc& rc) -> ssize_t {
+    return transport_->SendMsg(dest, buf, len, rc);
+  };
+  agent_recv_func_ = [this](eprosima::uxr::CustomEndPoint* src, uint8_t* buf,
+                             size_t len, int timeout,
+                             eprosima::uxr::TransportRc& rc) -> ssize_t {
+    return transport_->RecvMsg(src, buf, len, timeout, rc);
+  };
 
   // Create the agent with framing enabled (serial transport uses HDLC framing)
   agent_ = std::make_unique<eprosima::uxr::CustomAgent>(
       "microros_serial_agent", endpoint_.get(),
       eprosima::uxr::Middleware::Kind::FASTDDS,
       true,  // framing = true for serial
-      init_func, fini_func, send_func, recv_func);
+      agent_init_func_, agent_fini_func_, agent_send_func_, agent_recv_func_);
 
   if (!agent_->start()) {
     LOGE("Failed to start micro-ROS Agent");

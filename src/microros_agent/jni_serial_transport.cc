@@ -45,13 +45,20 @@ JNIEnv* JniSerialTransport::GetJNIEnv() {
     return nullptr;
   }
 
-  int status = g_javaVM->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
+  jint status = g_javaVM->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
   if (status == JNI_EDETACHED) {
-    status = g_javaVM->AttachCurrentThread(&env, nullptr);
-    if (status != JNI_OK) {
-      LOGE("JniSerialTransport: Failed to attach thread: %d", status);
+    if (g_javaVM->AttachCurrentThread(&env, nullptr) != JNI_OK) {
+      LOGE("JniSerialTransport: Failed to attach thread");
       return nullptr;
     }
+    // Auto-detach when this thread exits. thread_local ensures the guard is
+    // constructed exactly once per thread and its destructor runs on exit.
+    struct DetachGuard {
+      JavaVM* vm;
+      ~DetachGuard() { vm->DetachCurrentThread(); }
+    };
+    thread_local DetachGuard guard{g_javaVM};
+    (void)guard;
   }
   return env;
 }

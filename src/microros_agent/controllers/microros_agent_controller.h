@@ -6,14 +6,9 @@
 #include <string>
 #include <thread>
 
-#include "sensors/base/sensor_data_provider.h"
+#include <uxr/agent/transport/custom/CustomAgent.hpp>
 
-namespace eprosima {
-namespace uxr {
-class CustomAgent;
-class CustomEndPoint;
-}  // namespace uxr
-}  // namespace eprosima
+#include "sensors/base/sensor_data_provider.h"
 
 namespace ros2_android {
 
@@ -60,6 +55,14 @@ class MicroRosAgentController : public SensorDataProvider {
   std::unique_ptr<eprosima::uxr::CustomAgent> agent_;
   std::thread agent_thread_;
   std::atomic<bool> stop_requested_{false};
+
+  // Stored as members so they outlive AgentThreadFunc() - CustomAgent holds
+  // references (not copies) to these, so they must remain valid until after
+  // agent_->stop() returns in Disable().
+  eprosima::uxr::CustomAgent::InitFunction agent_init_func_;
+  eprosima::uxr::CustomAgent::FiniFunction agent_fini_func_;
+  eprosima::uxr::CustomAgent::SendMsgFunction agent_send_func_;
+  eprosima::uxr::CustomAgent::RecvMsgFunction agent_recv_func_;
 };
 
 }  // namespace ros2_android
