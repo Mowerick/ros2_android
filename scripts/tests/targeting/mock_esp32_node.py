@@ -76,10 +76,12 @@ class MockEsp32(Node):
 
         if msg.command_type == Command.SETUP:
             # Echo back config immediately - no movement
+            # Cast to plain int: ROS message fields return numpy integers which
+            # are rejected by the Feedback message setter validation.
             with self._lock:
-                self._frequencies = list(msg.frequency_goals)
-                self._en_motors = list(msg.en_motors)
-                self._resolution = msg.resolution
+                self._frequencies = [int(v) for v in msg.frequency_goals]
+                self._en_motors = [int(v) for v in msg.en_motors]
+                self._resolution = int(msg.resolution)
             self.get_logger().info(
                 f'  -> SETUP echoed: freq={self._frequencies} '
                 f'en={self._en_motors} res={self._resolution}'
@@ -87,7 +89,7 @@ class MockEsp32(Node):
             return
 
         duration = MOVE_DURATION.get(msg.command_type, 1.0)
-        target_steps = list(msg.step_goals) if msg.command_type == Command.TARGET else [0, 0, 0]
+        target_steps = [int(v) for v in msg.step_goals] if msg.command_type == Command.TARGET else [0, 0, 0]
         threading.Thread(
             target=self._do_move,
             args=(duration, target_steps, name),
