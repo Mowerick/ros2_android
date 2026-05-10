@@ -13,12 +13,12 @@ to be exercised over DDS on a desktop machine.
 
 ## Topics
 
-| Topic | Direction | Type | Description |
-|-------|-----------|------|-------------|
-| `/ESP32_Command` | Android → mock | `vermin_collector_ros_msgs/Command` | Commands sent by Target Manager |
-| `/ESP32_Feedback` | mock → Android | `vermin_collector_ros_msgs/Feedback` | Simulated ESP32 state |
-| `/zed/zed_node/imu/data` | publisher → Android | `sensor_msgs/Imu` | IMU for calibration |
-| `/cpb_eggs_center` | publisher → Android | `geometry_msgs/Point` | Detection target |
+| Topic                    | Direction           | Type                                 | Description                     |
+| ------------------------ | ------------------- | ------------------------------------ | ------------------------------- |
+| `/ESP32_Command`         | Android → mock      | `vermin_collector_ros_msgs/Command`  | Commands sent by Target Manager |
+| `/ESP32_Feedback`        | mock → Android      | `vermin_collector_ros_msgs/Feedback` | Simulated ESP32 state           |
+| `/zed/zed_node/imu/data` | publisher → Android | `sensor_msgs/Imu`                    | IMU for calibration             |
+| `/cpb_eggs_center`       | publisher → Android | `geometry_msgs/Point`                | Detection target                |
 
 ## Test Sequence
 
@@ -32,6 +32,7 @@ python3 mock_esp32_node.py
 ```
 
 Expected output as Android boots:
+
 ```
 Received HARD_HOMING: ...
   -> MOVING for 2.0s
@@ -49,18 +50,18 @@ Received SOFT_HOMING: ...
 ### Terminal 2 - Level IMU (calibration converges immediately)
 
 The quaternion below produces `gravity_in_camera() = (0, -1, 0)` which gives
-`tilt_err ≈ 0°` and `roll_err ≈ 0°` - both below the 0.3° deadband.
+`tilt_err = 0°` and `roll_err = 0°` - both below the 0.3° deadband.
 Calibration completes in a single tick.
 
 ```bash
 ros2 topic pub -r 10 /zed/zed_node/imu/data sensor_msgs/msg/Imu \
-  "{header: {frame_id: 'imu'}, orientation: {x: 0.0, y: -0.7071068, z: 0.0, w: 0.7071068}}"
+  "{header: {frame_id: 'imu'}, orientation: {x: -0.7071068, y: 0.0, z: 0.0, w: 0.7071068}}"
 ```
 
 > [!NOTE]
-> The identity quaternion `{x:0, y:0, z:0, w:1}` gives `gravity=(0,0,1)` which results
-> in `tilt_err = 90°`. The arm will calibrate toward 90° tilt rather than leveling.
-> Use the quaternion above for immediate convergence.
+> The identity quaternion `{x:0, y:0, z:0, w:1}` gives `gravity=(0,0,1)` → `tilt_err=90°`.
+> `{x:0, y:-0.7071, z:0, w:0.7071}` gives `gravity=(1,0,0)` → `roll_err=90°`.
+> Only `{x:-0.7071, y:0, z:0, w:0.7071}` gives `gravity=(0,-1,0)` → both errors=0°.
 
 ### Terminal 3 - Monitor commands from Android
 
@@ -69,6 +70,7 @@ ros2 topic echo /ESP32_Command
 ```
 
 Verify that:
+
 - `HARD_HOMING` (command_type=4) is sent first
 - `SETUP` (command_type=0) with `en_motors=[0,0,0]` follows, then again with `en_motors=[1,1,1]` after 5s
 - `TARGET` commands arrive during calibration (incremental step corrections)
@@ -100,14 +102,14 @@ EXECUTING -> READY (return-to-zero pending)
 
 ## Boot Timing (approximate with mock)
 
-| Phase | Duration |
-|-------|----------|
-| INIT → HARDHOME | instant (first Feedback received) |
-| HARDHOME → SETUP_PHASE | ~2.0s (mock HARD_HOMING move) |
+| Phase                     | Duration                                               |
+| ------------------------- | ------------------------------------------------------ |
+| INIT → HARDHOME           | instant (first Feedback received)                      |
+| HARDHOME → SETUP_PHASE    | ~2.0s (mock HARD_HOMING move)                          |
 | SETUP_PHASE → CALIBRATING | ~0.5s (motor gate: 5s from Enable; echoed immediately) |
-| CALIBRATING → SOFTHOME | 1 tick (100ms) with level IMU |
-| SOFTHOME → READY | ~1.5s (mock SOFT_HOMING move) |
-| **Total** | **~9s** (dominated by motor enable gate) |
+| CALIBRATING → SOFTHOME    | 1 tick (100ms) with level IMU                          |
+| SOFTHOME → READY          | ~1.5s (mock SOFT_HOMING move)                          |
+| **Total**                 | **~9s** (dominated by motor enable gate)               |
 
 > [!NOTE]
 > The motor enable gate (5s safety delay) means SETUP_PHASE may take up to 5 seconds
@@ -118,9 +120,10 @@ EXECUTING -> READY (return-to-zero pending)
 To test the calibration loop with non-zero error (arm needs to physically adjust):
 
 ```bash
-# 10° tilt error quaternion
+# ~10° tilt error: gravity=(0, -0.9848, 0.1736)
+# Derived by rotating {x:-0.7071,y:0,z:0,w:0.7071} by +10° around the roll axis
 ros2 topic pub -r 10 /zed/zed_node/imu/data sensor_msgs/msg/Imu \
-  "{header: {frame_id: 'imu'}, orientation: {x: 0.0868, y: -0.7044, z: 0.0, w: 0.7044}}"
+  "{header: {frame_id: 'imu'}, orientation: {x: -0.6645, y: 0.0, z: -0.0872, w: 0.7424}}"
 ```
 
 Logcat should show resolution progressing 8 → 32 → 64 as the error decreases,
