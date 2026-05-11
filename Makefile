@@ -63,6 +63,8 @@ $(DEPS_STAMP): ros.repos
 	cd $(DEPS_DIR)/fast-dds && patch -p1 < $(CURDIR)/android_patches/fast_dds_filewatch_chrono.patch || true
 	@echo "==> Applying Android patches for YDLidar SDK..."
 	cd $(DEPS_DIR)/ydlidar_sdk && patch -p1 < $(CURDIR)/android_patches/ydlidar_sdk_android_support.patch || true
+	@echo "==> Applying Android patches for micro-xrce-dds-agent..."
+	cd $(DEPS_DIR)/micro-xrce-dds-agent && patch -p1 < $(CURDIR)/android_patches/activate_ros_domain_override.patch || true
 	@echo "==> Fetching ros2_android_perception dependencies..."
 	cd $(DEPS_DIR)/ros2_android_perception && $(MAKE) deps
 	@touch $(DEPS_STAMP)

@@ -63,6 +63,10 @@ bool NetworkManager::GenerateCycloneDdsConfig(
   setenv("CYCLONEDDS_URI", cyclone_uri.c_str(), 1);
   setenv("ROS_DOMAIN_ID", std::to_string(ros_domain_id).c_str(), 1);
   setenv("RMW_IMPLEMENTATION", "rmw_cyclonedds_cpp", 1);
+  // Force the micro-ROS agent's FastDDS middleware to use the same DDS domain as the
+  // rest of the app. Without this, the ESP32 firmware's hardcoded domain 0 causes the
+  // agent's DDS entities to be invisible when ROS_DOMAIN_ID != 0.
+  setenv("XRCE_DOMAIN_ID_OVERRIDE", std::to_string(ros_domain_id).c_str(), 1);
   LOGI("NetworkManager: Cyclone DDS config generated successfully");
   return true;
 }

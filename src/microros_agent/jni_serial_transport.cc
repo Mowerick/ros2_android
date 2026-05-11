@@ -70,6 +70,7 @@ bool JniSerialTransport::Init() {
     return false;
   }
 
+
   // Call UsbSerialBridge.openDevice(deviceId, baudrate, dataBits, stopBits, parity, dtrReady)
   // dtrReady=true: Zephyr micro-ROS serial transport (CONFIG_UART_LINE_CTRL=y) waits for
   // DTR before starting the XRCE-DDS session.
@@ -135,7 +136,7 @@ bool JniSerialTransport::Fini() {
 }
 
 ssize_t JniSerialTransport::RecvMsg(
-    eprosima::uxr::CustomEndPoint* /*source_endpoint*/, uint8_t* buffer,
+    eprosima::uxr::CustomEndPoint* source_endpoint, uint8_t* buffer,
     size_t buffer_length, int timeout,
     eprosima::uxr::TransportRc& transport_rc) {
 
@@ -150,7 +151,20 @@ ssize_t JniSerialTransport::RecvMsg(
     return -1;
   }
 
+  // Serial is point-to-point: always one endpoint (the ESP32).
+  // check_non_empty_members() throws EmptyMemberException if the "index"
+  // member is null (which it is after reset()). Set it here so the check passes.
+  if (source_endpoint) {
+    source_endpoint->set_member_value<uint32_t>("index", 0u);
+  }
+
   // Create Java byte array and call BufferedUsbSerialPort.read(byte[], int)
+  static int recv_call_count = 0;
+  if (++recv_call_count <= 5 || recv_call_count % 100 == 0) {
+    LOGI("JniSerialTransport::RecvMsg #%d: buffer_length=%zu timeout=%d",
+         recv_call_count, buffer_length, timeout);
+  }
+
   jbyteArray j_buffer = env->NewByteArray(static_cast<jsize>(buffer_length));
   if (!j_buffer) {
     transport_rc = eprosima::uxr::TransportRc::server_error;
@@ -198,6 +212,8 @@ ssize_t JniSerialTransport::SendMsg(
     transport_rc = eprosima::uxr::TransportRc::server_error;
     return -1;
   }
+
+  LOGI("JniSerialTransport::SendMsg: %zu bytes", message_length);
 
   // Create Java byte array, fill it, call BufferedUsbSerialPort.write(byte[], int)
   jbyteArray j_buffer = env->NewByteArray(static_cast<jsize>(message_length));
