@@ -12,8 +12,23 @@ index e08ae6f..55bc2fd 100755
  
  ##########################################################
  IF (CMAKE_SYSTEM_NAME MATCHES "Linux")
+diff --git a/cmake/PackageConfigVersion.cmake.in b/cmake/PackageConfigVersion.cmake.in
+index 3132080..94ead54 100644
+--- a/cmake/PackageConfigVersion.cmake.in
++++ b/cmake/PackageConfigVersion.cmake.in
+@@ -1,8 +1,8 @@
+ set(PACKAGE_VERSION "@PACKAGE_VERSION@")
+ 
+ # Check build type is valid
+-if( "System:${CMAKE_SYSTEM_NAME},Android:${ANDROID},iOS:${IOS}" STREQUAL
+-    "System:@CMAKE_SYSTEM_NAME@,Android:@ANDROID@,iOS:@IOS@" )
++if( "System:${CMAKE_SYSTEM_NAME},Android:${__ANDROID__},iOS:${IOS}" STREQUAL
++    "System:@CMAKE_SYSTEM_NAME@,Android:@__ANDROID__@,iOS:@IOS@" )
+     # Check whether the requested PACKAGE_FIND_VERSION is compatible
+     if("${PACKAGE_VERSION}" VERSION_LESS "${PACKAGE_FIND_VERSION}")
+       set(PACKAGE_VERSION_COMPATIBLE FALSE)
 diff --git a/core/base/CMakeLists.txt b/core/base/CMakeLists.txt
-index 9b61fe6..2a7b38c 100644
+index 9b61fe6..f2cec21 100644
 --- a/core/base/CMakeLists.txt
 +++ b/core/base/CMakeLists.txt
 @@ -6,6 +6,7 @@ add_to_ydlidar_sources(${SRCS})
@@ -21,12 +36,12 @@ index 9b61fe6..2a7b38c 100644
  IF (WIN32)
  add_to_ydlidar_libraries(Winmm)
 -ELSE()                   
-+ELSEIF(NOT ANDROID)
++ELSEIF(NOT __ANDROID__)
 +# Android Bionic includes pthread in libc
  add_to_ydlidar_libraries(pthread)
  ENDIF()                                      
 diff --git a/core/base/locker.h b/core/base/locker.h
-index e038491..383f4ac 100644
+index e038491..0fa459d 100644
 --- a/core/base/locker.h
 +++ b/core/base/locker.h
 @@ -16,344 +16,379 @@
@@ -180,8 +195,7 @@ index e038491..383f4ac 100644
 +              wait_time.tv_nsec -= 1000000000;
 +            }
  
--#if !defined(__ANDROID__)
-+#if !defined(ANDROID)
+ #if !defined(__ANDROID__)
  
 -      switch (pthread_mutex_timedlock(&_lock, &wait_time)) {
 -        case 0:
@@ -657,18 +671,9 @@ index e038491..383f4ac 100644
 +  } // core
 +} // ydlidar
 diff --git a/core/base/thread.h b/core/base/thread.h
-index b276b38..8815cf1 100644
+index b276b38..3a7e289 100644
 --- a/core/base/thread.h
 +++ b/core/base/thread.h
-@@ -11,7 +11,7 @@
- #include <assert.h>
- #endif
- 
--#if defined(__ANDROID__)
-+#if defined(ANDROID)
- #define pthread_cancel(x) 0
- #endif
- 
 @@ -46,7 +46,7 @@ namespace ydlidar
            Thread thread_(proc, param);
  #if defined(_WIN32)
@@ -714,7 +719,7 @@ index b276b38..8815cf1 100644
          static void needExit()
          {
 -#if defined(_WIN32)
-+#if defined(_WIN32) || defined(ANDROID)
++#if defined(_WIN32) || defined(__ANDROID__)
 +          // pthread_testcancel not supported on Windows or Android
  #else
            pthread_testcancel();
@@ -727,7 +732,7 @@ index b276b38..8815cf1 100644
 +  } // core
  } // ydlidar
 diff --git a/core/base/ydlidar.h b/core/base/ydlidar.h
-index f86667d..03ce0d4 100644
+index f86667d..5c477e8 100644
 --- a/core/base/ydlidar.h
 +++ b/core/base/ydlidar.h
 @@ -7,17 +7,19 @@
@@ -775,7 +780,7 @@ index f86667d..03ce0d4 100644
      char error_string[error_length];
  #ifndef _WIN32
 -#if (defined(_GNU_SOURCE) && !defined(ANDROID) &&(_POSIX_C_SOURCE >= 200112L))
-+#if (defined(_GNU_SOURCE) && !defined(ANDROID) && (_POSIX_C_SOURCE >= 200112L))
++#if (defined(_GNU_SOURCE) && !defined(__ANDROID__) && (_POSIX_C_SOURCE >= 200112L))
      char *msg = strerror_r(errno, error_string, error_length);
  
 -    if (msg != error_string) {
@@ -785,7 +790,7 @@ index f86667d..03ce0d4 100644
        msg[error_length - 1] = '\0';
      }
  
-+#elif defined(ANDROID)
++#elif defined(__ANDROID__)
 +    // Android Bionic uses XSI strerror_r which returns char*
 +    char *msg = strerror_r(errno, error_string, error_length);
 +    if (msg != error_string)
@@ -981,7 +986,7 @@ index f86667d..03ce0d4 100644
 -#endif  // YDLIDAR_H_
 +#endif // YDLIDAR_H_
 diff --git a/core/common/ydlidar_help.h b/core/common/ydlidar_help.h
-index 941b679..fa02c5b 100644
+index 941b679..4415e3e 100644
 --- a/core/common/ydlidar_help.h
 +++ b/core/common/ydlidar_help.h
 @@ -1,1185 +1,1304 @@
@@ -1070,7 +1075,7 @@ index 941b679..fa02c5b 100644
  #include <sstream>
  #include <iomanip>
 +
-+#ifdef ANDROID
++#ifdef __ANDROID__
 +#include <android/log.h>
 +#endif
 +
@@ -1105,7 +1110,7 @@ index 941b679..fa02c5b 100644
 +    {
  
 -//颜色定义
-+#ifndef ANDROID
++#ifndef __ANDROID__
 +// 颜色定义
  #ifndef COLOR
 -    #define COLOFF  "\033[0m"      ///关闭所有属性
@@ -1230,7 +1235,7 @@ index 941b679..fa02c5b 100644
 +      // 调试
 +      inline void debug(char *fmt, ...)
 +      {
-+#ifdef ANDROID
++#ifdef __ANDROID__
 +        char buff[1024] = {0};
 +        va_list ap;
 +        va_start(ap, fmt);
@@ -1264,7 +1269,7 @@ index 941b679..fa02c5b 100644
 +      // 常规
 +      inline void info(char *fmt, ...)
 +      {
-+#ifdef ANDROID
++#ifdef __ANDROID__
 +        char buff[1024] = {0};
 +        va_list ap;
 +        va_start(ap, fmt);
@@ -1290,7 +1295,7 @@ index 941b679..fa02c5b 100644
 +      // 警告
 +      inline void warn(char *fmt, ...)
 +      {
-+#ifdef ANDROID
++#ifdef __ANDROID__
 +        char buff[1024] = {0};
 +        va_list ap;
 +        va_start(ap, fmt);
@@ -1439,7 +1444,7 @@ index 941b679..fa02c5b 100644
 +      // 错误
 +      inline void error(char *fmt, ...)
 +      {
-+#ifdef ANDROID
++#ifdef __ANDROID__
 +        char buff[1024] = {0};
 +        va_list ap;
 +        va_start(ap, fmt);
@@ -1554,7 +1559,7 @@ index 941b679..fa02c5b 100644
 +      // 调试（16进制）
 +      inline void debugh(const uint8_t *data, int size, const char *prefix = NULL)
 +      {
-+#ifdef ANDROID
++#ifdef __ANDROID__
 +        if (!data || !size)
 +          return;
 +
@@ -1603,7 +1608,7 @@ index 941b679..fa02c5b 100644
 +      // 常规（16进制）
 +      inline void infoh(const uint8_t *data, int size, const char *prefix = NULL)
 +      {
-+#ifdef ANDROID
++#ifdef __ANDROID__
 +        if (!data || !size)
 +          return;
 +
@@ -3368,7 +3373,7 @@ index 941b679..fa02c5b 100644
 +  } // core
 +} // ydlidar
 diff --git a/core/network/CMakeLists.txt b/core/network/CMakeLists.txt
-index a664baa..6930ee2 100644
+index a664baa..9de76dd 100644
 --- a/core/network/CMakeLists.txt
 +++ b/core/network/CMakeLists.txt
 @@ -5,6 +5,7 @@ add_to_ydlidar_sources(${SRCS})
@@ -3376,19 +3381,19 @@ index a664baa..6930ee2 100644
  IF (WIN32)
  add_to_ydlidar_libraries(setupapi ws2_32)
 -ELSE()
-+ELSEIF(NOT ANDROID)
++ELSEIF(NOT __ANDROID__)
 +# Android Bionic includes rt in libc
  add_to_ydlidar_libraries(rt)
  ENDIF()                                            
 diff --git a/core/serial/impl/CMakeLists.txt b/core/serial/impl/CMakeLists.txt
-index cae8ed3..5d83a28 100644
+index cae8ed3..2e363df 100644
 --- a/core/serial/impl/CMakeLists.txt
 +++ b/core/serial/impl/CMakeLists.txt
 @@ -1,6 +1,9 @@
  IF (WIN32)
  add_subdirectory(windows)
  include_directories( ${CMAKE_CURRENT_SOURCE_DIR}/windows)
-+ELSEIF (ANDROID)
++ELSEIF (__ANDROID__)
 +add_subdirectory(android)
 +include_directories( ${CMAKE_CURRENT_SOURCE_DIR}/android)
  ELSE()
@@ -3406,11 +3411,11 @@ index 0000000..a224b85
 +add_to_ydlidar_sources(${SRCS})
 diff --git a/core/serial/impl/android/android_jni_serial.cpp b/core/serial/impl/android/android_jni_serial.cpp
 new file mode 100644
-index 0000000..dda8f8b
+index 0000000..df7f0f1
 --- /dev/null
 +++ b/core/serial/impl/android/android_jni_serial.cpp
 @@ -0,0 +1,622 @@
-+#if defined(ANDROID)
++#if defined(__ANDROID__)
 +
 +#include "android_jni_serial.h"
 +
@@ -4031,14 +4036,14 @@ index 0000000..dda8f8b
 +  } // namespace core
 +} // namespace ydlidar
 +
-+#endif // ANDROID
++#endif // __ANDROID__
 diff --git a/core/serial/impl/android/android_jni_serial.h b/core/serial/impl/android/android_jni_serial.h
 new file mode 100644
-index 0000000..48cb307
+index 0000000..1b9893b
 --- /dev/null
 +++ b/core/serial/impl/android/android_jni_serial.h
 @@ -0,0 +1,170 @@
-+#if defined(ANDROID)
++#if defined(__ANDROID__)
 +
 +#ifndef SERIAL_IMPL_ANDROID_JNI_H
 +#define SERIAL_IMPL_ANDROID_JNI_H
@@ -4207,27 +4212,18 @@ index 0000000..48cb307
 +
 +#endif // SERIAL_IMPL_ANDROID_JNI_H
 +
-+#endif // ANDROID
++#endif // __ANDROID__
 diff --git a/core/serial/impl/unix/unix_serial.cpp b/core/serial/impl/unix/unix_serial.cpp
-index eae2cc8..01a95f4 100644
+index eae2cc8..1ac7c25 100644
 --- a/core/serial/impl/unix/unix_serial.cpp
 +++ b/core/serial/impl/unix/unix_serial.cpp
-@@ -6,7 +6,7 @@
- #include <unistd.h>
- #include <fcntl.h>
- #include <sys/ioctl.h>
--#if !defined(__ANDROID__)
-+#if !defined(ANDROID)
- #include <sys/signal.h>
- #include <sysexits.h>
- 
 @@ -21,8 +21,8 @@
  
  #include <asm/ioctls.h>
  
 -#if defined(__linux__) &&!defined(__ANDROID__)
 -# include <linux/serial.h>
-+#if defined(__linux__) && !defined(ANDROID)
++#if defined(__linux__) && !defined(__ANDROID__)
 +#include <linux/serial.h>
  #endif
  
@@ -4300,10 +4296,11 @@ index eae2cc8..01a95f4 100644
  
  #ifndef BOTHER
 -#  define BOTHER      0010000
--#endif
++#define BOTHER 0010000
+ #endif
+ 
 -
--
--#if defined(__ANDROID__)
+ #if defined(__ANDROID__)
 -struct serial_struct {
 -  int     type;
 -  int     line;
@@ -4383,10 +4380,6 @@ index eae2cc8..01a95f4 100644
 -  tio->c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
 -  tio->c_cflag &= ~(CSIZE | PARENB);
 -  tio->c_cflag |= CS8;
-+#define BOTHER 0010000
-+#endif
-+
-+#if defined(ANDROID)
 +      struct serial_struct
 +      {
 +        int type;
@@ -5070,31 +5063,21 @@ index eae2cc8..01a95f4 100644
 +        pthread_mutex_init(&this->read_mutex, NULL);
 +        pthread_mutex_init(&this->write_mutex, NULL);
 +      }
- 
++
 +      Serial::SerialImpl::~SerialImpl()
 +      {
 +        close();
 +        pthread_mutex_destroy(&this->read_mutex);
 +        pthread_mutex_destroy(&this->write_mutex);
 +      }
- 
++
 +      bool Serial::SerialImpl::open()
 +      {
 +        if (port_.empty())
 +          return false;
 +        if (isOpen())
 +          return true;
- 
--Serial::SerialImpl::SerialImpl(const string &port, unsigned long baudrate,
--                               bytesize_t bytesize,
--                               parity_t parity, stopbits_t stopbits,
--                               flowcontrol_t flowcontrol)
--  : port_(port), fd_(-1), pid(-1), is_open_(false), xonxoff_(false),
--    rtscts_(false), timeout_(Timeout()), baudrate_(baudrate), byte_time_ns_(0),
--    parity_(parity), bytesize_(bytesize), stopbits_(stopbits),
--    flowcontrol_(flowcontrol) {
--  pthread_mutex_init(&this->read_mutex, NULL);
--  pthread_mutex_init(&this->write_mutex, NULL);
++
 +        if (async_)
 +        {
 +          pid = -1;
@@ -5107,7 +5090,6 @@ index eae2cc8..01a95f4 100644
 +          }
 +#endif
  
--}
 +          fd_ = ::open(port_.c_str(),
 +                       O_RDWR | O_NOCTTY | O_NONBLOCK | O_APPEND | O_NDELAY);
 +          if (fd_ == -1)
@@ -5130,14 +5112,94 @@ index eae2cc8..01a95f4 100644
 +            }
 +          }
  
++          termios tio;
++          if (!getTermios(&tio))
++          {
++            close();
++            return false;
++          }
+ 
+-Serial::SerialImpl::SerialImpl(const string &port, unsigned long baudrate,
+-                               bytesize_t bytesize,
+-                               parity_t parity, stopbits_t stopbits,
+-                               flowcontrol_t flowcontrol)
+-  : port_(port), fd_(-1), pid(-1), is_open_(false), xonxoff_(false),
+-    rtscts_(false), timeout_(Timeout()), baudrate_(baudrate), byte_time_ns_(0),
+-    parity_(parity), bytesize_(bytesize), stopbits_(stopbits),
+-    flowcontrol_(flowcontrol) {
+-  pthread_mutex_init(&this->read_mutex, NULL);
+-  pthread_mutex_init(&this->write_mutex, NULL);
++          set_common_props(&tio);
++          set_databits(&tio, bytesize_);
++          set_parity(&tio, parity_);
++          set_stopbits(&tio, stopbits_);
++          set_flowcontrol(&tio, flowcontrol_);
+ 
+-}
++          if (!setTermios(&tio))
++          {
++            close();
++            return false;
++          }
++          if (!setBaudrate(baudrate_))
++          {
++            close();
++            return false;
++          }
+ 
 -Serial::SerialImpl::~SerialImpl() {
 -  close();
 -  pthread_mutex_destroy(&this->read_mutex);
 -  pthread_mutex_destroy(&this->write_mutex);
 -}
-+          termios tio;
-+          if (!getTermios(&tio))
++          // Update byte_time_ based on the new settings.
++          uint32_t bit_time_ns = 1e9 / baudrate_;
++          byte_time_ns_ = bit_time_ns * (1 + bytesize_ + parity_ + stopbits_);
++          // Compensate for the stopbits_one_point_five enum being equal to int 3,
++          // and not 1.5.
++          if (stopbits_ == stopbits_one_point_five)
 +          {
++            byte_time_ns_ += ((1.5 - stopbits_one_point_five) * bit_time_ns);
++          }
++          is_open_ = true;
++          return true;
++        }
++        else
++        {
++          pid = -1;
++          fd_ = ::open(port_.c_str(),
++                       O_RDWR | O_NOCTTY | O_APPEND | O_NDELAY);
++          if (fd_ == -1)
++          {
++            switch (errno)
++            {
++            case EINTR:
++              // Recurse because this is a recoverable error.
++              return open();
++            case EIO:
++            case ENFILE:
++            case EMFILE:
++            default:
++              close();
++              return false;
++            }
++          }
++          // 设置为阻塞模式
++          // if (fcntl(fd_, F_SETFL, 0) == -1) {
++          //     perror("fcntl error");
++          //     close();
++          //     return false;
++          // }
++          int flags = fcntl(fd_, F_GETFL);
++          if (flags == -1)
++          {
++            ydlidar::core::common::error("fcntl F_GETFL failed");
++            close();
++            return false;
++          }
++          if (fcntl(fd_, F_SETFL, flags & (~O_ASYNC)) == -1)
++          {
++            ydlidar::core::common::error("fcntl F_SETFL failed");
 +            close();
 +            return false;
 +          }
@@ -5148,11 +5210,27 @@ index eae2cc8..01a95f4 100644
 -    return false;
 -  if (isOpen())
 -    return true;
++          termios tio;
++          if (!getTermios(&tio))
++          {
++            close();
++            return false;
++          }
 +          set_common_props(&tio);
 +          set_databits(&tio, bytesize_);
 +          set_parity(&tio, parity_);
 +          set_stopbits(&tio, stopbits_);
 +          set_flowcontrol(&tio, flowcontrol_);
++          if (!setTermios(&tio))
++          {
++            close();
++            return false;
++          }
++          if (!setBaudrate(baudrate_))
++          {
++            close();
++            return false;
++          }
  
 -  if (async_)
 -  {
@@ -5233,91 +5311,6 @@ index eae2cc8..01a95f4 100644
 -        default:
 -          close();
 -          return false;
-+          if (!setTermios(&tio))
-+          {
-+            close();
-+            return false;
-+          }
-+          if (!setBaudrate(baudrate_))
-+          {
-+            close();
-+            return false;
-+          }
-+
-+          // Update byte_time_ based on the new settings.
-+          uint32_t bit_time_ns = 1e9 / baudrate_;
-+          byte_time_ns_ = bit_time_ns * (1 + bytesize_ + parity_ + stopbits_);
-+          // Compensate for the stopbits_one_point_five enum being equal to int 3,
-+          // and not 1.5.
-+          if (stopbits_ == stopbits_one_point_five)
-+          {
-+            byte_time_ns_ += ((1.5 - stopbits_one_point_five) * bit_time_ns);
-+          }
-+          is_open_ = true;
-+          return true;
-+        }
-+        else
-+        {
-+          pid = -1;
-+          fd_ = ::open(port_.c_str(),
-+                       O_RDWR | O_NOCTTY | O_APPEND | O_NDELAY);
-+          if (fd_ == -1)
-+          {
-+            switch (errno)
-+            {
-+            case EINTR:
-+              // Recurse because this is a recoverable error.
-+              return open();
-+            case EIO:
-+            case ENFILE:
-+            case EMFILE:
-+            default:
-+              close();
-+              return false;
-+            }
-+          }
-+          // 设置为阻塞模式
-+          // if (fcntl(fd_, F_SETFL, 0) == -1) {
-+          //     perror("fcntl error");
-+          //     close();
-+          //     return false;
-+          // }
-+          int flags = fcntl(fd_, F_GETFL);
-+          if (flags == -1)
-+          {
-+            ydlidar::core::common::error("fcntl F_GETFL failed");
-+            close();
-+            return false;
-+          }
-+          if (fcntl(fd_, F_SETFL, flags & (~O_ASYNC)) == -1)
-+          {
-+            ydlidar::core::common::error("fcntl F_SETFL failed");
-+            close();
-+            return false;
-+          }
-+
-+          termios tio;
-+          if (!getTermios(&tio))
-+          {
-+            close();
-+            return false;
-+          }
-+          set_common_props(&tio);
-+          set_databits(&tio, bytesize_);
-+          set_parity(&tio, parity_);
-+          set_stopbits(&tio, stopbits_);
-+          set_flowcontrol(&tio, flowcontrol_);
-+          if (!setTermios(&tio))
-+          {
-+            close();
-+            return false;
-+          }
-+          if (!setBaudrate(baudrate_))
-+          {
-+            close();
-+            return false;
-+          }
-+
 +          // Update byte_time_ based on the new settings.
 +          uint32_t bit_time_ns = 1e9 / baudrate_;
 +          byte_time_ns_ = bit_time_ns * (1 + bytesize_ + parity_ + stopbits_);
@@ -5814,9 +5807,7 @@ index eae2cc8..01a95f4 100644
 +        timespec wait_time = {0, static_cast<long>(byte_time_ns_ * count)};
 +        pselect(0, NULL, NULL, NULL, &wait_time, NULL);
 +      }
- 
--      /* Do the select */
--      int n = pselect(fd_ + 1, &readfds, NULL, NULL, &timeout_val, NULL);
++
 +      size_t Serial::SerialImpl::read(uint8_t *buf, size_t size)
 +      {
 +        // If the port is not open, throw
@@ -5824,17 +5815,19 @@ index eae2cc8..01a95f4 100644
 +        {
 +          return 0;
 +        }
- 
--      if (n < 0) {
--        if (errno == EINTR) {
--          return -1;
-+        size_t bytes_read = 0;
 +
++        size_t bytes_read = 0;
+ 
+-      /* Do the select */
+-      int n = pselect(fd_ + 1, &readfds, NULL, NULL, &timeout_val, NULL);
 +        // Calculate total timeout in milliseconds t_c + (t_m * N)
 +        long total_timeout_ms = timeout_.read_timeout_constant;
 +        total_timeout_ms += timeout_.read_timeout_multiplier * static_cast<long>(size);
 +        MillisecondTimer total_timeout(total_timeout_ms);
-+
+ 
+-      if (n < 0) {
+-        if (errno == EINTR) {
+-          return -1;
 +        // Pre-fill buffer with available bytes
 +        {
 +          ssize_t bytes_read_now = ::read(fd_, buf, size);
@@ -5891,7 +5884,9 @@ index eae2cc8..01a95f4 100644
 +                waitByteTimes(size - (bytes_available + bytes_read));
 +              }
 +            }
-+
+ 
+-            if (remain_timeout > expect_remain_time) {
+-              usleep(expect_remain_time);
 +            // This should be non-blocking returning only what is available now
 +            //  Then returning so that select can block again.
 +            ssize_t bytes_read_now = ::read(fd_, buf + bytes_read, size - bytes_read);
@@ -5908,9 +5903,7 @@ index eae2cc8..01a95f4 100644
 +
 +            // Update bytes_read
 +            bytes_read += static_cast<size_t>(bytes_read_now);
- 
--            if (remain_timeout > expect_remain_time) {
--              usleep(expect_remain_time);
++
 +            // If bytes_read == size then we have read everything we need
 +            if (bytes_read == size)
 +            {
@@ -6007,38 +6000,27 @@ index eae2cc8..01a95f4 100644
 +              // Timed out
 +              break;
 +            }
++
++            first_iteration = false;
++
++            timespec timeout(timespec_from_ms(timeout_remaining_ms));
  
 -    if (bytes_read_now > 0) {
 -      bytes_read = bytes_read_now;
 -    }
 -  }
-+            first_iteration = false;
++            FD_ZERO(&writefds);
++            FD_SET(fd_, &writefds);
  
 -  while (bytes_read < size) {
 -    int64_t timeout_remaining_ms = total_timeout.remaining();
-+            timespec timeout(timespec_from_ms(timeout_remaining_ms));
++            // Do the select
++            int r = pselect(fd_ + 1, NULL, &writefds, NULL, &timeout, NULL);
  
 -    if (timeout_remaining_ms <= 0) {
 -      // Timed out
 -      break;
 -    }
-+            FD_ZERO(&writefds);
-+            FD_SET(fd_, &writefds);
- 
--    // Timeout for the next select is whichever is less of the remaining
--    // total read timeout and the inter-byte timeout.
--    uint32_t timeout = std::min(static_cast<uint32_t>(timeout_remaining_ms),
--                                timeout_.inter_byte_timeout);
-+            // Do the select
-+            int r = pselect(fd_ + 1, NULL, &writefds, NULL, &timeout, NULL);
- 
--    // Wait for the device to be readable, and then attempt to read.
--    if (waitReadable(timeout)) {
--      // If it's a fixed-length multi-byte read, insert a wait here so that
--      // we can attempt to grab the whole thing in a single IO call. Skip
--      // this wait if a non-max inter_byte_timeout is specified.
--      if (size > 1 && timeout_.inter_byte_timeout == Timeout::max()) {
--        size_t bytes_available = available();
 +            // Figure out what happened by looking at select's response 'r'
 +            /** Error **/
 +            if (r < 0)
@@ -6049,34 +6031,27 @@ index eae2cc8..01a95f4 100644
 +                continue;
 +              }
  
--        if (bytes_available + bytes_read < size) {
--          waitByteTimes(size - (bytes_available + bytes_read));
--        }
--      }
+-    // Timeout for the next select is whichever is less of the remaining
+-    // total read timeout and the inter-byte timeout.
+-    uint32_t timeout = std::min(static_cast<uint32_t>(timeout_remaining_ms),
+-                                timeout_.inter_byte_timeout);
 +              // Otherwise there was some error
 +              continue;
 +            }
- 
--      // This should be non-blocking returning only what is available now
--      //  Then returning so that select can block again.
--      ssize_t bytes_read_now = ::read(fd_, buf + bytes_read, size - bytes_read);
--
--      // read should always return some data as select reported it was
--      // ready to read when we get to this point.
--      if (bytes_read_now < 1) {
--        // Disconnected devices, at least on Linux, show the
--        // behavior that they are always ready to read immediately
--        // but reading returns nothing.
--        continue;
--      }
++
 +            /** Timeout **/
 +            if (r == 0)
 +            {
 +              break;
 +            }
  
--      // Update bytes_read
--      bytes_read += static_cast<size_t>(bytes_read_now);
+-    // Wait for the device to be readable, and then attempt to read.
+-    if (waitReadable(timeout)) {
+-      // If it's a fixed-length multi-byte read, insert a wait here so that
+-      // we can attempt to grab the whole thing in a single IO call. Skip
+-      // this wait if a non-max inter_byte_timeout is specified.
+-      if (size > 1 && timeout_.inter_byte_timeout == Timeout::max()) {
+-        size_t bytes_available = available();
 +            /** Port ready to write **/
 +            if (r > 0)
 +            {
@@ -6125,9 +6100,8 @@ index eae2cc8..01a95f4 100644
 +            }
 +          }
  
--      // If bytes_read == size then we have read everything we need
--      if (bytes_read == size) {
--        break;
+-        if (bytes_available + bytes_read < size) {
+-          waitByteTimes(size - (bytes_available + bytes_read));
 +          return bytes_written;
 +        }
 +        else
@@ -6146,77 +6120,72 @@ index eae2cc8..01a95f4 100644
 +            return realSize;
 +          }
 +          return realSize;
-+        }
+         }
        }
  
--      // If bytes_read < size then we have more to read
--      if (bytes_read < size) {
+-      // This should be non-blocking returning only what is available now
+-      //  Then returning so that select can block again.
+-      ssize_t bytes_read_now = ::read(fd_, buf + bytes_read, size - bytes_read);
+-
+-      // read should always return some data as select reported it was
+-      // ready to read when we get to this point.
+-      if (bytes_read_now < 1) {
+-        // Disconnected devices, at least on Linux, show the
+-        // behavior that they are always ready to read immediately
+-        // but reading returns nothing.
 -        continue;
 +      void Serial::SerialImpl::setPort(const string &port)
 +      {
 +        port_ = port;
        }
  
--      // If bytes_read > size then we have over read, which shouldn't happen
--      if (bytes_read > size) {
+-      // Update bytes_read
+-      bytes_read += static_cast<size_t>(bytes_read_now);
+-
+-      // If bytes_read == size then we have read everything we need
+-      if (bytes_read == size) {
 -        break;
 +      string Serial::SerialImpl::getPort() const
 +      {
 +        return port_;
        }
--    }
--  }
--
--  return bytes_read;
--}
  
--size_t Serial::SerialImpl::write(const uint8_t *data, size_t length) 
--{
--  if (!isOpen())
--    return 0;
--
--  if (async_)
--  {
--    fd_set writefds;
--    size_t bytes_written = 0;
--
--    // Calculate total timeout in milliseconds t_c + (t_m * N)
--    long total_timeout_ms = timeout_.write_timeout_constant;
--    total_timeout_ms += timeout_.write_timeout_multiplier * static_cast<long>
--                        (length);
--    MillisecondTimer total_timeout(total_timeout_ms);
--
--    bool first_iteration = true;
--
--    while (bytes_written < length) {
--      int64_t timeout_remaining_ms = total_timeout.remaining();
+-      // If bytes_read < size then we have more to read
+-      if (bytes_read < size) {
+-        continue;
 +      void Serial::SerialImpl::setTimeout(serial::Timeout &timeout)
 +      {
 +        timeout_ = timeout;
-+      }
+       }
  
--      // Only consider the timeout if it's not the first iteration of the loop
--      // otherwise a timeout of 0 won't be allowed through
--      if (!first_iteration && (timeout_remaining_ms <= 0)) {
--        // Timed out
+-      // If bytes_read > size then we have over read, which shouldn't happen
+-      if (bytes_read > size) {
 -        break;
 +      serial::Timeout Serial::SerialImpl::getTimeout() const
 +      {
 +        return timeout_;
        }
+-    }
+-  }
  
--      first_iteration = false;
+-  return bytes_read;
+-}
 +      bool Serial::SerialImpl::setBaudrate(unsigned long baudrate)
 +      {
  
--      timespec timeout(timespec_from_ms(timeout_remaining_ms));
+-size_t Serial::SerialImpl::write(const uint8_t *data, size_t length) 
+-{
+-  if (!isOpen())
+-    return 0;
 +        if (fd_ == -1)
 +        {
 +          return false;
 +        }
  
--      FD_ZERO(&writefds);
--      FD_SET(fd_, &writefds);
+-  if (async_)
+-  {
+-    fd_set writefds;
+-    size_t bytes_written = 0;
 +        baudrate_ = baudrate;
 +        // OS X support
 +#if defined(MAC_OS_X_VERSION_10_4) && (MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_4)
@@ -6231,19 +6200,17 @@ index eae2cc8..01a95f4 100644
 +          return false;
 +        }
  
--      // Do the select
--      int r = pselect(fd_ + 1, NULL, &writefds, NULL, &timeout, NULL);
+-    // Calculate total timeout in milliseconds t_c + (t_m * N)
+-    long total_timeout_ms = timeout_.write_timeout_constant;
+-    total_timeout_ms += timeout_.write_timeout_multiplier * static_cast<long>
+-                        (length);
+-    MillisecondTimer total_timeout(total_timeout_ms);
 +        // Linux Support
 +#elif defined(__linux__) && defined(TIOCSSERIAL)
 +        speed_t baud;
 +        bool standard_baud = is_standardbaudrate(baudrate, baud);
  
--      // Figure out what happened by looking at select's response 'r'
--      /** Error **/
--      if (r < 0) {
--        // Select was interrupted, try again
--        if (errno == EINTR) {
--          continue;
+-    bool first_iteration = true;
 +        if (!standard_baud)
 +        {
 +          return setCustomBaudRate(baudrate);
@@ -6251,21 +6218,104 @@ index eae2cc8..01a95f4 100644
 +        else
 +        {
 +          return setStandardBaudRate(baud);
-         }
++        }
  
--        // Otherwise there was some error
--        continue;
+-    while (bytes_written < length) {
+-      int64_t timeout_remaining_ms = total_timeout.remaining();
 +#else
 +        return false;
 +#endif
-       }
++      }
  
--      /** Timeout **/
--      if (r == 0) {
+-      // Only consider the timeout if it's not the first iteration of the loop
+-      // otherwise a timeout of 0 won't be allowed through
+-      if (!first_iteration && (timeout_remaining_ms <= 0)) {
+-        // Timed out
 -        break;
 +      unsigned long Serial::SerialImpl::getBaudrate() const
 +      {
 +        return baudrate_;
+       }
+ 
+-      first_iteration = false;
++      bool Serial::SerialImpl::setStandardBaudRate(speed_t baudrate)
++      {
++#ifdef __linux__
++        // try to clear custom baud rate, using termios v2
++        struct termios2 tio2;
++
++        if (::ioctl(fd_, TCGETS2, &tio2) != -1)
++        {
++          if (tio2.c_cflag & BOTHER)
++          {
++            tio2.c_cflag &= ~BOTHER;
++            tio2.c_cflag |= CBAUD;
++            ::ioctl(fd_, TCSETS2, &tio2);
++          }
++        }
+ 
+-      timespec timeout(timespec_from_ms(timeout_remaining_ms));
++        // try to clear custom baud rate, using serial_struct (old way)
++        struct serial_struct serial;
++        ::memset(&serial, 0, sizeof(serial));
++
++        if (::ioctl(fd_, TIOCGSERIAL, &serial) != -1)
++        {
++          if (serial.flags & ASYNC_SPD_CUST)
++          {
++            serial.flags &= ~ASYNC_SPD_CUST;
++            serial.custom_divisor = 0;
++            // we don't check on errors because a driver can has not this feature
++            ::ioctl(fd_, TIOCSSERIAL, &serial);
++          }
++        }
+ 
+-      FD_ZERO(&writefds);
+-      FD_SET(fd_, &writefds);
++#endif
+ 
+-      // Do the select
+-      int r = pselect(fd_ + 1, NULL, &writefds, NULL, &timeout, NULL);
++        termios tio;
+ 
+-      // Figure out what happened by looking at select's response 'r'
+-      /** Error **/
+-      if (r < 0) {
+-        // Select was interrupted, try again
+-        if (errno == EINTR) {
+-          continue;
++        if (!getTermios(&tio))
++        {
++          return false;
+         }
+ 
+-        // Otherwise there was some error
+-        continue;
+-      }
++#ifdef _BSD_SOURCE
++
++        if (::cfsetspeed(&tio, baudrate) < 0)
++        {
++          return false;
++        }
++
++#else
++
++        if (::cfsetispeed(&tio, baudrate) < 0)
++        {
++          return false;
++        }
+ 
+-      /** Timeout **/
+-      if (r == 0) {
+-        break;
++        if (::cfsetospeed(&tio, baudrate) < 0)
++        {
++          return false;
++        }
++
++#endif
++        return setTermios(&tio);
        }
  
 -      /** Port ready to write **/
@@ -6283,66 +6333,85 @@ index eae2cc8..01a95f4 100644
 -            // behavior that they are always ready to write immediately
 -            // but writing returns nothing.
 -            continue;
-+      bool Serial::SerialImpl::setStandardBaudRate(speed_t baudrate)
+-          }
++      bool Serial::SerialImpl::setCustomBaudRate(unsigned long baudrate)
 +      {
-+#ifdef __linux__
-+        // try to clear custom baud rate, using termios v2
 +        struct termios2 tio2;
-+
-+        if (::ioctl(fd_, TCGETS2, &tio2) != -1)
-+        {
-+          if (tio2.c_cflag & BOTHER)
-+          {
-+            tio2.c_cflag &= ~BOTHER;
-+            tio2.c_cflag |= CBAUD;
-+            ::ioctl(fd_, TCSETS2, &tio2);
-           }
-+        }
  
 -          // Update bytes_written
 -          bytes_written += static_cast<size_t>(bytes_written_now);
--
++        if (::ioctl(fd_, TCGETS2, &tio2) != -1)
++        {
++          tio2.c_cflag &= ~CBAUD;
++          tio2.c_cflag |= BOTHER;
+ 
 -          // If bytes_written == size then we have written everything we need to
 -          if (bytes_written == length) {
 -            break;
-+        // try to clear custom baud rate, using serial_struct (old way)
-+        struct serial_struct serial;
-+        ::memset(&serial, 0, sizeof(serial));
+-          }
++          tio2.c_ispeed = baudrate;
++          tio2.c_ospeed = baudrate;
 +
-+        if (::ioctl(fd_, TIOCGSERIAL, &serial) != -1)
-+        {
-+          if (serial.flags & ASYNC_SPD_CUST)
-+          {
-+            serial.flags &= ~ASYNC_SPD_CUST;
-+            serial.custom_divisor = 0;
-+            // we don't check on errors because a driver can has not this feature
-+            ::ioctl(fd_, TIOCSSERIAL, &serial);
-           }
-+        }
++          tcflush(fd_, TCIFLUSH);
  
 -          // If bytes_written < size then we have more to write
 -          if (bytes_written < length) {
 -            continue;
--          }
-+#endif
++          if (fcntl(fd_, F_SETFL, FNDELAY))
++          {
++            return false;
+           }
  
 -          // If bytes_written > size then we have over written, which shouldn't happen
 -          if (bytes_written > length) {
 -            break;
--          }
-+        termios tio;
++          /*struct flock file_lock;
++          file_lock.l_type = F_WRLCK;
++          file_lock.l_whence = SEEK_SET;
++          file_lock.l_start = 0;
++          file_lock.l_len = 0;
++          file_lock.l_pid = getpid();
++          if (fcntl(fd_, F_SETLK, &file_lock) != 0) {
++            return false;
++          }*/
 +
-+        if (!getTermios(&tio))
-+        {
-+          return false;
++          if (::ioctl(fd_, TCSETS2, &tio2) != -1 && ::ioctl(fd_, TCGETS2, &tio2) != -1)
++          {
++            return true;
+           }
          }
  
 -        // This shouldn't happen, if r > 0 our fd has to be in the list!
 -        break;
 -        //THROW (IOException, "select reports ready to write, but our fd isn't in the list, this shouldn't happen!");
--      }
++        struct serial_struct serial;
++
++        if (::ioctl(fd_, TIOCGSERIAL, &serial) == -1)
++        {
++          return false;
++        }
++
++        serial.flags &= ~ASYNC_SPD_MASK;
++        serial.flags |= (ASYNC_SPD_CUST /* | ASYNC_LOW_LATENCY*/);
++        serial.custom_divisor = serial.baud_base / baudrate;
++
++        if (serial.custom_divisor == 0)
++        {
++          return false;
++        }
++
++        if (serial.custom_divisor * baudrate != serial.baud_base)
++        {
++        }
++
++        if (::ioctl(fd_, TIOCSSERIAL, &serial) == -1)
++        {
++          return false;
++        }
++
++        return setStandardBaudRate(B38400);
+       }
 -    }
-+#ifdef _BSD_SOURCE
  
 -    return bytes_written;
 -  }
@@ -6410,49 +6479,40 @@ index eae2cc8..01a95f4 100644
 -  } else {
 -    return setStandardBaudRate(baud);
 -  }
-+        if (::cfsetspeed(&tio, baudrate) < 0)
-+        {
-+          return false;
-+        }
++      bool Serial::SerialImpl::setBytesize(serial::bytesize_t bytesize)
++      {
++        termios tio;
  
- #else
+-#else
 -  return false;
-+
-+        if (::cfsetispeed(&tio, baudrate) < 0)
+-#endif
++        if (!getTermios(&tio))
 +        {
 +          return false;
 +        }
-+
-+        if (::cfsetospeed(&tio, baudrate) < 0)
-+        {
-+          return false;
-+        }
-+
- #endif
-+        return setTermios(&tio);
-+      }
  
 -}
-+      bool Serial::SerialImpl::setCustomBaudRate(unsigned long baudrate)
-+      {
-+        struct termios2 tio2;
++        bytesize_ = bytesize;
++        set_databits(&tio, bytesize);
  
 -unsigned long Serial::SerialImpl::getBaudrate() const {
 -  return baudrate_;
 -}
-+        if (::ioctl(fd_, TCGETS2, &tio2) != -1)
-+        {
-+          tio2.c_cflag &= ~CBAUD;
-+          tio2.c_cflag |= BOTHER;
++        return setTermios(&tio);
++      }
  
-+          tio2.c_ispeed = baudrate;
-+          tio2.c_ospeed = baudrate;
++      serial::bytesize_t Serial::SerialImpl::getBytesize() const
++      {
++        return bytesize_;
++      }
  
 -bool Serial::SerialImpl::setStandardBaudRate(speed_t baudrate) {
 -#ifdef __linux__
 -  // try to clear custom baud rate, using termios v2
 -  struct termios2 tio2;
-+          tcflush(fd_, TCIFLUSH);
++      bool Serial::SerialImpl::setParity(serial::parity_t parity)
++      {
++        termios tio;
  
 -  if (::ioctl(fd_, TCGETS2, &tio2) != -1) {
 -    if (tio2.c_cflag & BOTHER) {
@@ -6461,29 +6521,16 @@ index eae2cc8..01a95f4 100644
 -      ::ioctl(fd_, TCSETS2, &tio2);
 -    }
 -  }
-+          if (fcntl(fd_, F_SETFL, FNDELAY))
-+          {
-+            return false;
-+          }
++        if (!getTermios(&tio))
++        {
++          return false;
++        }
  
 -  // try to clear custom baud rate, using serial_struct (old way)
 -  struct serial_struct serial;
 -  ::memset(&serial, 0, sizeof(serial));
-+          /*struct flock file_lock;
-+          file_lock.l_type = F_WRLCK;
-+          file_lock.l_whence = SEEK_SET;
-+          file_lock.l_start = 0;
-+          file_lock.l_len = 0;
-+          file_lock.l_pid = getpid();
-+          if (fcntl(fd_, F_SETLK, &file_lock) != 0) {
-+            return false;
-+          }*/
-+
-+          if (::ioctl(fd_, TCSETS2, &tio2) != -1 && ::ioctl(fd_, TCGETS2, &tio2) != -1)
-+          {
-+            return true;
-+          }
-+        }
++        parity_ = parity;
++        set_parity(&tio, parity);
  
 -  if (::ioctl(fd_, TIOCGSERIAL, &serial) != -1) {
 -    if (serial.flags & ASYNC_SPD_CUST) {
@@ -6493,48 +6540,48 @@ index eae2cc8..01a95f4 100644
 -      ::ioctl(fd_, TIOCSSERIAL, &serial);
 -    }
 -  }
-+        struct serial_struct serial;
++        return setTermios(&tio);
++      }
  
 -#endif
-+        if (::ioctl(fd_, TIOCGSERIAL, &serial) == -1)
-+        {
-+          return false;
-+        }
++      serial::parity_t Serial::SerialImpl::getParity() const
++      {
++        return parity_;
++      }
  
 -  termios tio;
-+        serial.flags &= ~ASYNC_SPD_MASK;
-+        serial.flags |= (ASYNC_SPD_CUST /* | ASYNC_LOW_LATENCY*/);
-+        serial.custom_divisor = serial.baud_base / baudrate;
++      bool Serial::SerialImpl::setStopbits(serial::stopbits_t stopbits)
++      {
++        termios tio;
  
 -  if (!getTermios(&tio)) {
 -    return false;
 -  }
-+        if (serial.custom_divisor == 0)
++        if (!getTermios(&tio))
 +        {
 +          return false;
 +        }
  
 -#ifdef _BSD_SOURCE
-+        if (serial.custom_divisor * baudrate != serial.baud_base)
-+        {
-+        }
++        stopbits_ = stopbits;
++        set_stopbits(&tio, stopbits);
  
 -  if (::cfsetspeed(&tio, baudrate) < 0) {
 -    return false;
 -  }
-+        if (::ioctl(fd_, TIOCSSERIAL, &serial) == -1)
-+        {
-+          return false;
-+        }
++        return setTermios(&tio);
++      }
  
 -#else
-+        return setStandardBaudRate(B38400);
++      serial::stopbits_t Serial::SerialImpl::getStopbits() const
++      {
++        return stopbits_;
 +      }
  
 -  if (::cfsetispeed(&tio, baudrate) < 0) {
 -    return false;
 -  }
-+      bool Serial::SerialImpl::setBytesize(serial::bytesize_t bytesize)
++      bool Serial::SerialImpl::setFlowcontrol(serial::flowcontrol_t flowcontrol)
 +      {
 +        termios tio;
  
@@ -6549,42 +6596,42 @@ index eae2cc8..01a95f4 100644
 -#endif
 -  return setTermios(&tio);
 -}
-+        bytesize_ = bytesize;
-+        set_databits(&tio, bytesize);
++        flowcontrol_ = flowcontrol;
++        set_flowcontrol(&tio, flowcontrol);
  
 +        return setTermios(&tio);
 +      }
  
 -bool Serial::SerialImpl::setCustomBaudRate(unsigned long baudrate) {
 -  struct termios2 tio2;
-+      serial::bytesize_t Serial::SerialImpl::getBytesize() const
++      serial::flowcontrol_t Serial::SerialImpl::getFlowcontrol() const
 +      {
-+        return bytesize_;
++        return flowcontrol_;
 +      }
  
 -  if (::ioctl(fd_, TCGETS2, &tio2) != -1) {
 -    tio2.c_cflag &= ~CBAUD;
 -    tio2.c_cflag |= BOTHER;
-+      bool Serial::SerialImpl::setParity(serial::parity_t parity)
++      bool Serial::SerialImpl::setTermios(const termios *tio)
 +      {
-+        termios tio;
  
 -    tio2.c_ispeed = baudrate;
 -    tio2.c_ospeed = baudrate;
-+        if (!getTermios(&tio))
++        tcflush(fd_, TCIFLUSH);
+ 
+-    tcflush(fd_, TCIFLUSH);
++        if (fcntl(fd_, F_SETFL, FNDELAY))
 +        {
 +          return false;
 +        }
  
--    tcflush(fd_, TCIFLUSH);
-+        parity_ = parity;
-+        set_parity(&tio, parity);
- 
 -    if (fcntl(fd_, F_SETFL, FNDELAY)) {
 -      return false;
 -    }
-+        return setTermios(&tio);
-+      }
++        if (::tcsetattr(fd_, TCSANOW, tio) == -1)
++        {
++          return false;
++        }
  
 -    /*struct flock file_lock;
 -    file_lock.l_type = F_WRLCK;
@@ -6595,16 +6642,14 @@ index eae2cc8..01a95f4 100644
 -    if (fcntl(fd_, F_SETLK, &file_lock) != 0) {
 -      return false;
 -    }*/
-+      serial::parity_t Serial::SerialImpl::getParity() const
-+      {
-+        return parity_;
++        return true;
 +      }
  
-+      bool Serial::SerialImpl::setStopbits(serial::stopbits_t stopbits)
++      bool Serial::SerialImpl::getTermios(termios *tio)
 +      {
-+        termios tio;
++        ::memset(tio, 0, sizeof(termios));
  
-+        if (!getTermios(&tio))
++        if (::tcgetattr(fd_, tio) == -1)
 +        {
 +          return false;
 +        }
@@ -6613,103 +6658,10 @@ index eae2cc8..01a95f4 100644
 -      return true;
 -    }
 -  }
-+        stopbits_ = stopbits;
-+        set_stopbits(&tio, stopbits);
++        return true;
++      }
  
 -  struct serial_struct serial;
-+        return setTermios(&tio);
-+      }
- 
--  if (::ioctl(fd_, TIOCGSERIAL, &serial) == -1) {
--    return false;
--  }
-+      serial::stopbits_t Serial::SerialImpl::getStopbits() const
-+      {
-+        return stopbits_;
-+      }
- 
--  serial.flags &= ~ASYNC_SPD_MASK;
--  serial.flags |= (ASYNC_SPD_CUST /* | ASYNC_LOW_LATENCY*/);
--  serial.custom_divisor = serial.baud_base / baudrate;
-+      bool Serial::SerialImpl::setFlowcontrol(serial::flowcontrol_t flowcontrol)
-+      {
-+        termios tio;
- 
--  if (serial.custom_divisor == 0) {
--    return false;
--  }
-+        if (!getTermios(&tio))
-+        {
-+          return false;
-+        }
- 
--  if (serial.custom_divisor * baudrate != serial.baud_base) {
--  }
-+        flowcontrol_ = flowcontrol;
-+        set_flowcontrol(&tio, flowcontrol);
- 
--  if (::ioctl(fd_, TIOCSSERIAL, &serial) == -1) {
--    return false;
--  }
-+        return setTermios(&tio);
-+      }
- 
--  return setStandardBaudRate(B38400);
--}
-+      serial::flowcontrol_t Serial::SerialImpl::getFlowcontrol() const
-+      {
-+        return flowcontrol_;
-+      }
- 
-+      bool Serial::SerialImpl::setTermios(const termios *tio)
-+      {
- 
--bool Serial::SerialImpl::setBytesize(serial::bytesize_t bytesize) {
--  termios tio;
-+        tcflush(fd_, TCIFLUSH);
- 
--  if (!getTermios(&tio)) {
--    return false;
--  }
-+        if (fcntl(fd_, F_SETFL, FNDELAY))
-+        {
-+          return false;
-+        }
- 
--  bytesize_ = bytesize;
--  set_databits(&tio, bytesize);
-+        if (::tcsetattr(fd_, TCSANOW, tio) == -1)
-+        {
-+          return false;
-+        }
- 
--  return setTermios(&tio);
--}
-+        return true;
-+      }
- 
--serial::bytesize_t Serial::SerialImpl::getBytesize() const {
--  return bytesize_;
--}
-+      bool Serial::SerialImpl::getTermios(termios *tio)
-+      {
-+        ::memset(tio, 0, sizeof(termios));
- 
--bool Serial::SerialImpl::setParity(serial::parity_t parity) {
--  termios tio;
-+        if (::tcgetattr(fd_, tio) == -1)
-+        {
-+          return false;
-+        }
- 
--  if (!getTermios(&tio)) {
--    return false;
--  }
-+        return true;
-+      }
- 
--  parity_ = parity;
--  set_parity(&tio, parity);
 +      void Serial::SerialImpl::flush()
 +      {
 +        if (is_open_ == false)
@@ -6717,16 +6669,17 @@ index eae2cc8..01a95f4 100644
 +          return;
 +        }
  
--  return setTermios(&tio);
--}
-+#if !defined(ANDROID)
+-  if (::ioctl(fd_, TIOCGSERIAL, &serial) == -1) {
+-    return false;
+-  }
++#if !defined(__ANDROID__)
 +        tcdrain(fd_);
 +#endif
 +      }
  
--serial::parity_t Serial::SerialImpl::getParity() const {
--  return parity_;
--}
+-  serial.flags &= ~ASYNC_SPD_MASK;
+-  serial.flags |= (ASYNC_SPD_CUST /* | ASYNC_LOW_LATENCY*/);
+-  serial.custom_divisor = serial.baud_base / baudrate;
 +      void Serial::SerialImpl::flushInput()
 +      {
 +        if (is_open_ == false)
@@ -6734,13 +6687,13 @@ index eae2cc8..01a95f4 100644
 +          return;
 +        }
  
--bool Serial::SerialImpl::setStopbits(serial::stopbits_t stopbits) {
--  termios tio;
+-  if (serial.custom_divisor == 0) {
+-    return false;
+-  }
 +        tcflush(fd_, TCIFLUSH);
 +      }
  
--  if (!getTermios(&tio)) {
--    return false;
+-  if (serial.custom_divisor * baudrate != serial.baud_base) {
 -  }
 +      void Serial::SerialImpl::flushOutput()
 +      {
@@ -6749,12 +6702,13 @@ index eae2cc8..01a95f4 100644
 +          return;
 +        }
  
--  stopbits_ = stopbits;
--  set_stopbits(&tio, stopbits);
+-  if (::ioctl(fd_, TIOCSSERIAL, &serial) == -1) {
+-    return false;
+-  }
 +        tcflush(fd_, TCOFLUSH);
 +      }
  
--  return setTermios(&tio);
+-  return setStandardBaudRate(B38400);
 -}
 +      void Serial::SerialImpl::sendBreak(int duration)
 +      {
@@ -6763,13 +6717,10 @@ index eae2cc8..01a95f4 100644
 +          return;
 +        }
  
--serial::stopbits_t Serial::SerialImpl::getStopbits() const {
--  return stopbits_;
--}
 +        tcsendbreak(fd_, static_cast<int>(duration / 4));
 +      }
  
--bool Serial::SerialImpl::setFlowcontrol(serial::flowcontrol_t flowcontrol) {
+-bool Serial::SerialImpl::setBytesize(serial::bytesize_t bytesize) {
 -  termios tio;
 +      bool Serial::SerialImpl::setBreak(bool level)
 +      {
@@ -6796,8 +6747,8 @@ index eae2cc8..01a95f4 100644
 +          }
 +        }
  
--  flowcontrol_ = flowcontrol;
--  set_flowcontrol(&tio, flowcontrol);
+-  bytesize_ = bytesize;
+-  set_databits(&tio, bytesize);
 +        return true;
 +      }
  
@@ -6810,11 +6761,13 @@ index eae2cc8..01a95f4 100644
 +          return false;
 +        }
  
--serial::flowcontrol_t Serial::SerialImpl::getFlowcontrol() const {
--  return flowcontrol_;
+-serial::bytesize_t Serial::SerialImpl::getBytesize() const {
+-  return bytesize_;
 -}
 +        int command = TIOCM_RTS;
  
+-bool Serial::SerialImpl::setParity(serial::parity_t parity) {
+-  termios tio;
 +        if (level)
 +        {
 +          if (-1 == ioctl(fd_, TIOCMBIS, &command))
@@ -6830,11 +6783,14 @@ index eae2cc8..01a95f4 100644
 +          }
 +        }
  
--bool Serial::SerialImpl::setTermios(const termios *tio) {
+-  if (!getTermios(&tio)) {
+-    return false;
+-  }
 +        return true;
 +      }
  
--  tcflush(fd_, TCIFLUSH);
+-  parity_ = parity;
+-  set_parity(&tio, parity);
 +      bool Serial::SerialImpl::setDTR(bool level)
 +      {
 +        if (is_open_ == false)
@@ -6842,14 +6798,13 @@ index eae2cc8..01a95f4 100644
 +          return false;
 +        }
  
--  if (fcntl(fd_, F_SETFL, FNDELAY)) {
--    return false;
--  }
+-  return setTermios(&tio);
+-}
 +        int command = TIOCM_DTR;
  
--  if (::tcsetattr(fd_, TCSANOW, tio) == -1) {
--    return false;
--  }
+-serial::parity_t Serial::SerialImpl::getParity() const {
+-  return parity_;
+-}
 +        if (level)
 +        {
 +          if (-1 == ioctl(fd_, TIOCMBIS, &command))
@@ -6865,31 +6820,30 @@ index eae2cc8..01a95f4 100644
 +          }
 +        }
  
--  return true;
--}
+-bool Serial::SerialImpl::setStopbits(serial::stopbits_t stopbits) {
+-  termios tio;
 +        return true;
 +      }
  
--bool Serial::SerialImpl::getTermios(termios *tio) {
--  ::memset(tio, 0, sizeof(termios));
+-  if (!getTermios(&tio)) {
+-    return false;
+-  }
 +      bool Serial::SerialImpl::waitForChange()
 +      {
 +#ifndef TIOCMIWAIT
  
--  if (::tcgetattr(fd_, tio) == -1) {
--    return false;
--  }
+-  stopbits_ = stopbits;
+-  set_stopbits(&tio, stopbits);
 +        while (is_open_ == true)
 +        {
  
--  return true;
+-  return setTermios(&tio);
 -}
 +          int status;
  
--void Serial::SerialImpl::flush() {
--  if (is_open_ == false) {
--    return;
--  }
+-serial::stopbits_t Serial::SerialImpl::getStopbits() const {
+-  return stopbits_;
+-}
 +          if (-1 == ioctl(fd_, TIOCMGET, &status))
 +          {
 +            return false;
@@ -6902,37 +6856,33 @@ index eae2cc8..01a95f4 100644
 +            }
 +          }
  
--#if !defined(__ANDROID__)
--  tcdrain(fd_);
--#endif
--}
+-bool Serial::SerialImpl::setFlowcontrol(serial::flowcontrol_t flowcontrol) {
+-  termios tio;
 +          usleep(1000);
 +        }
  
--void Serial::SerialImpl::flushInput() {
--  if (is_open_ == false) {
--    return;
+-  if (!getTermios(&tio)) {
+-    return false;
 -  }
 +        return false;
 +#else
 +        int command = (TIOCM_CD | TIOCM_DSR | TIOCM_RI | TIOCM_CTS);
  
--  tcflush(fd_, TCIFLUSH);
--}
+-  flowcontrol_ = flowcontrol;
+-  set_flowcontrol(&tio, flowcontrol);
 +        if (-1 == ioctl(fd_, TIOCMIWAIT, &command))
 +        {
 +          return false;
 +        }
  
--void Serial::SerialImpl::flushOutput() {
--  if (is_open_ == false) {
--    return;
--  }
+-  return setTermios(&tio);
+-}
 +        return true;
 +#endif
 +      }
  
--  tcflush(fd_, TCOFLUSH);
+-serial::flowcontrol_t Serial::SerialImpl::getFlowcontrol() const {
+-  return flowcontrol_;
 -}
 +      bool Serial::SerialImpl::getCTS()
 +      {
@@ -6941,14 +6891,9 @@ index eae2cc8..01a95f4 100644
 +          return false;
 +        }
  
--void Serial::SerialImpl::sendBreak(int duration) {
--  if (is_open_ == false) {
--    return;
--  }
 +        int status;
  
--  tcsendbreak(fd_, static_cast<int>(duration / 4));
--}
+-bool Serial::SerialImpl::setTermios(const termios *tio) {
 +        if (-1 == ioctl(fd_, TIOCMGET, &status))
 +        {
 +          return false;
@@ -6959,10 +6904,7 @@ index eae2cc8..01a95f4 100644
 +        }
 +      }
  
--bool Serial::SerialImpl::setBreak(bool level) {
--  if (is_open_ == false) {
--    return false;
--  }
+-  tcflush(fd_, TCIFLUSH);
 +      bool Serial::SerialImpl::getDSR()
 +      {
 +        if (is_open_ == false)
@@ -6970,19 +6912,14 @@ index eae2cc8..01a95f4 100644
 +          return false;
 +        }
  
--  if (level) {
--    if (-1 == ioctl(fd_, TIOCSBRK)) {
--      return false;
--    }
--  } else {
--    if (-1 == ioctl(fd_, TIOCCBRK)) {
--      return false;
--    }
+-  if (fcntl(fd_, F_SETFL, FNDELAY)) {
+-    return false;
 -  }
 +        int status;
  
--  return true;
--}
+-  if (::tcsetattr(fd_, TCSANOW, tio) == -1) {
+-    return false;
+-  }
 +        if (-1 == ioctl(fd_, TIOCMGET, &status))
 +        {
 +          return false;
@@ -6993,10 +6930,8 @@ index eae2cc8..01a95f4 100644
 +        }
 +      }
  
--bool Serial::SerialImpl::setRTS(bool level) {
--  if (is_open_ == false) {
--    return false;
--  }
+-  return true;
+-}
 +      bool Serial::SerialImpl::getRI()
 +      {
 +        if (is_open_ == false)
@@ -7004,17 +6939,12 @@ index eae2cc8..01a95f4 100644
 +          return false;
 +        }
  
--  int command = TIOCM_RTS;
+-bool Serial::SerialImpl::getTermios(termios *tio) {
+-  ::memset(tio, 0, sizeof(termios));
 +        int status;
  
--  if (level) {
--    if (-1 == ioctl(fd_, TIOCMBIS, &command)) {
--      return false;
--    }
--  } else {
--    if (-1 == ioctl(fd_, TIOCMBIC, &command)) {
--      return false;
--    }
+-  if (::tcgetattr(fd_, tio) == -1) {
+-    return false;
 -  }
 +        if (-1 == ioctl(fd_, TIOCMGET, &status))
 +        {
@@ -7025,7 +6955,9 @@ index eae2cc8..01a95f4 100644
 +          return 0 != (status & TIOCM_RI);
 +        }
 +      }
-+
+ 
+-  return true;
+-}
 +      bool Serial::SerialImpl::getCD()
 +      {
 +        if (is_open_ == false)
@@ -7033,10 +6965,79 @@ index eae2cc8..01a95f4 100644
 +          return false;
 +        }
  
--  return true;
--}
+-void Serial::SerialImpl::flush() {
+-  if (is_open_ == false) {
+-    return;
+-  }
 +        int status;
  
+-#if !defined(__ANDROID__)
+-  tcdrain(fd_);
+-#endif
+-}
+-
+-void Serial::SerialImpl::flushInput() {
+-  if (is_open_ == false) {
+-    return;
+-  }
+-
+-  tcflush(fd_, TCIFLUSH);
+-}
+-
+-void Serial::SerialImpl::flushOutput() {
+-  if (is_open_ == false) {
+-    return;
+-  }
+-
+-  tcflush(fd_, TCOFLUSH);
+-}
+-
+-void Serial::SerialImpl::sendBreak(int duration) {
+-  if (is_open_ == false) {
+-    return;
+-  }
+-
+-  tcsendbreak(fd_, static_cast<int>(duration / 4));
+-}
+-
+-bool Serial::SerialImpl::setBreak(bool level) {
+-  if (is_open_ == false) {
+-    return false;
+-  }
+-
+-  if (level) {
+-    if (-1 == ioctl(fd_, TIOCSBRK)) {
+-      return false;
+-    }
+-  } else {
+-    if (-1 == ioctl(fd_, TIOCCBRK)) {
+-      return false;
+-    }
+-  }
+-
+-  return true;
+-}
+-
+-bool Serial::SerialImpl::setRTS(bool level) {
+-  if (is_open_ == false) {
+-    return false;
+-  }
+-
+-  int command = TIOCM_RTS;
+-
+-  if (level) {
+-    if (-1 == ioctl(fd_, TIOCMBIS, &command)) {
+-      return false;
+-    }
+-  } else {
+-    if (-1 == ioctl(fd_, TIOCMBIC, &command)) {
+-      return false;
+-    }
+-  }
+-
+-  return true;
+-}
+-
 -bool Serial::SerialImpl::setDTR(bool level) {
 -  if (is_open_ == false) {
 -    return false;
