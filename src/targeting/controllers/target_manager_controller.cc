@@ -676,6 +676,7 @@ void TargetManagerController::TickCalibrating() {
   if (err < kCalibDeadbandDeg && fb.resolution == kResFine) {
     state_ = TargetManagerState::SOFTHOME;
     softhome_seen_non_ready_ = false;
+    softhome_enter_time_ = std::chrono::steady_clock::now();
     SendSoftHoming();
     LOGI("CALIBRATING complete (err=%.3f°) -> SOFTHOME", err);
     return;
@@ -727,13 +728,19 @@ void TargetManagerController::TickCalibrating() {
 }
 
 // SOFTHOME: wait for firmware to leave READY then return after soft home completes.
+// Fallback: if firmware stays READY for >2 s after the soft-home command (e.g. the
+// MOVING window was missed between ticks), accept it as already done.
 void TargetManagerController::TickSofthome() {
   if (!latest_feedback_.has_value()) return;
   if (!softhome_seen_non_ready_) {
     if (latest_feedback_->state != kEsp32StateReady) {
       softhome_seen_non_ready_ = true;
+    } else {
+      auto elapsed = std::chrono::steady_clock::now() - softhome_enter_time_;
+      if (elapsed < std::chrono::seconds(2)) return;
+      LOGW("SOFTHOME: ESP32 stayed READY for 2s - soft home already done, advancing");
+      softhome_seen_non_ready_ = true;
     }
-    return;
   }
   if (latest_feedback_->state == kEsp32StateReady) {
     if (fixed_position_mode_) {

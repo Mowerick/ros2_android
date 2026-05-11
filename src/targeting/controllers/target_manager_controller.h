@@ -132,6 +132,7 @@ class TargetManagerController : public SensorDataProvider {
   // Boot phase one-shot flags
   bool hh_seen_non_ready_ = false;       // HARDHOME: saw firmware leave READY
   bool softhome_seen_non_ready_ = false;  // SOFTHOME: saw firmware leave READY
+  std::chrono::steady_clock::time_point softhome_enter_time_;  // timeout fallback
 
   // Desired motor config (compared against Feedback for echo-back and drift detection)
   DesiredSetup desired_setup_;
