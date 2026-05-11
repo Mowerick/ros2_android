@@ -1277,7 +1277,7 @@ extern "C"
     g_openDeviceMethod = env->GetStaticMethodID(
         g_usbSerialBridgeClass,
         "openDevice",
-        "(Ljava/lang/String;IIII)Lcom/github/mowerick/ros2/android/util/BufferedUsbSerialPort;");
+        "(Ljava/lang/String;IIIIZ)Lcom/github/mowerick/ros2/android/util/BufferedUsbSerialPort;");
     if (g_openDeviceMethod == nullptr)
     {
       LOGE("Failed to find UsbSerialBridge.openDevice method");

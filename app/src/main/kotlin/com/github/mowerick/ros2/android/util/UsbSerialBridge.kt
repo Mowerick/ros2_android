@@ -73,9 +73,10 @@ object UsbSerialBridge {
         baudrate: Int,
         dataBits: Int,
         stopBits: Int,
-        parity: Int
+        parity: Int,
+        dtrReady: Boolean
     ): BufferedUsbSerialPort? {
-        Log.i(TAG, "Opening device: $deviceId (baud=$baudrate, data=$dataBits, stop=$stopBits, parity=$parity)")
+        Log.i(TAG, "Opening device: $deviceId (baud=$baudrate, data=$dataBits, stop=$stopBits, parity=$parity, dtr=$dtrReady)")
 
         val manager = usbSerialManager
         if (manager == null) {
@@ -95,8 +96,7 @@ object UsbSerialBridge {
             return it
         }
 
-        // Connect to USB device
-        val port = manager.connectDevice(uniqueId, baudrate)
+        val port = manager.connectDevice(uniqueId, baudrate, dtrReady)
         if (port == null) {
             Log.e(TAG, "Failed to connect to device: $uniqueId (path=$deviceId)")
             return null

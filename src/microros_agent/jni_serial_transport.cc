@@ -70,11 +70,13 @@ bool JniSerialTransport::Init() {
     return false;
   }
 
-  // Call UsbSerialBridge.openDevice(deviceId, baudrate, dataBits, stopBits, parity)
+  // Call UsbSerialBridge.openDevice(deviceId, baudrate, dataBits, stopBits, parity, dtrReady)
+  // dtrReady=true: Zephyr micro-ROS serial transport (CONFIG_UART_LINE_CTRL=y) waits for
+  // DTR before starting the XRCE-DDS session.
   jstring j_device_id = env->NewStringUTF(device_id_.c_str());
   jobject port = env->CallStaticObjectMethod(
       g_usbSerialBridgeClass, g_openDeviceMethod,
-      j_device_id, baudrate_, 8, 1, 0);
+      j_device_id, baudrate_, 8, 1, 0, JNI_TRUE);
 
   env->DeleteLocalRef(j_device_id);
 

@@ -98,7 +98,7 @@ class UsbSerialManager(private val context: Context) {
      * @param baudRate Baud rate (default: 512000 for TG15)
      * @return UsbSerialPort instance if successful, null otherwise
      */
-    fun connectDevice(uniqueId: String, baudRate: Int = 512000): UsbSerialPort? {
+    fun connectDevice(uniqueId: String, baudRate: Int = 512000, dtrReady: Boolean = false): UsbSerialPort? {
         Log.i(TAG, "Connecting to device: $uniqueId at $baudRate baud")
 
         // Check if already connected - verify port is still open
@@ -158,8 +158,9 @@ class UsbSerialManager(private val context: Context) {
                 UsbSerialPort.PARITY_NONE
             )
 
-            // Disable flow control (YDLIDAR doesn't use it)
-            port.dtr = false
+            // ESP32 CDC-ACM micro-ROS transport (CONFIG_UART_LINE_CTRL=y) waits for DTR
+            // before starting XRCE-DDS session. YDLIDAR does not use flow control.
+            port.dtr = dtrReady
             port.rts = false
 
             activeConnections[uniqueId] = port
