@@ -130,6 +130,8 @@ target_include_directories(android-ros PUBLIC
     ${NCNN_INCLUDE_DIR}
     ${EIGEN_INCLUDE_DIR})
 
+target_compile_definitions(android-ros PRIVATE __ANDROID__)
+
 # Define ROS2_ANDROID_DEBUG for Debug/RelWithDebInfo builds
 # This controls LOGD() macro availability in core/log.h
 if(CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")

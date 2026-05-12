@@ -2,7 +2,8 @@
 
 An Android app that deploys a ROS 2 Humble Perception & Positioning subsystem on ARM devices (arm64-v8a) using Eclipse Cyclone DDS. Built on top of [sloretz/sensors_for_ros](https://github.com/sloretz/sensors_for_ros) (Loretz, ROSCon 2022) - a CMake superbuild of ~70 ROS 2 Humble packages for Android - restructured from a pure C++ NativeActivity into a Java/Kotlin + Native hybrid with Jetpack Compose UI.
 
-Target: Android 13 (API 33), NDK 26.3.
+![Android](<https://img.shields.io/badge/Android-13%20(API%2033)-green?logo=android>)
+![NDK](https://img.shields.io/badge/NDK-26.3-blue)
 
 ## Features
 
@@ -22,10 +23,6 @@ Target: Android 13 (API 33), NDK 26.3.
 - **Beetle Predator mode** - handheld pest detection using built-in rear camera + GPS. Runs NCNN YOLOv9 + Deep SORT on camera frames, publishes geolocated detections as `vermin_collector_ros_msgs/BeetleDetection` with novelty filtering (only new confirmed tracks). User selects which classes (beetle, larva, eggs) trigger publishing via label filter chips
 - **Target manager** - CPB egg selection with IMU-based orientation calibration, subscribes to detection results and ZED IMU, publishes `ESP32_Command` via micro-ROS Agent to ESP32
 - **micro-ROS Agent** - XRCE-DDS bridge over USB CDC-ACM serial at 460800 baud, HDLC framing, bridges `ESP32_Command`/`ESP32_Feedback` between ROS 2 DDS network and ESP32-S3 microcontroller
-
-### Planned (Not Yet Implemented)
-
-- **DDS-Security** - OpenSSL static linking (hidden visibility to avoid BoringSSL collision), Cyclone DDS security plugins, SROS2 credentials
 
 ### Known Limitations
 
