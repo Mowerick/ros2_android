@@ -228,8 +228,6 @@ TARGET_RUNNING → AGENT_RUNNING
 
 Selects CPB egg targets for laser engagement, compensating for camera-to-laser physical offsets and device orientation via ZED IMU data. Publishes `ESP32_Command` directly to the micro-ROS Agent, which bridges it to the ESP32 microcontroller.
 
-**State machine:** INIT - CALIBRATING - READY - SENT_TARGET - WAITING_TO_RETURN - RETURNING - FINISHED (also supports FIXED_POSITION_MODE for manual override)
-
 **Input (subscribed topics):**
 
 - `/cpb_eggs_center` - `geometry_msgs/Point` - 3D egg cluster location from object detection
@@ -245,13 +243,6 @@ Selects CPB egg targets for laser engagement, compensating for camera-to-laser p
 
 The pipeline supports distributed deployment across multiple Android devices or PCs. Nodes can run locally or be detected as running on other devices via topic probing.
 
-**Node states:**
-
-- **Stopped** - Node not running anywhere
-- **Running Locally** - Node executing on this Android device
-- **Running on Network** - Node detected on another device (topics discovered via DDS)
-- **External Hardware** - Node runs on dedicated hardware (e.g., ZED camera on Jetson)
-
 **User workflow:**
 
 1. Navigate to "ROS 2 Subsystem" from dashboard
@@ -263,24 +254,6 @@ The pipeline supports distributed deployment across multiple Android devices or 
 > [!TIP]
 > The object detection node can run on Phone A while target manager runs on Phone B. Topic discovery automatically detects which nodes are running where and enables/disables start buttons accordingly.
 
-### Technical Implementation Notes
-
-**OpenCV dependency isolation:**
-
-- OpenCV (opencv-mobile) is **only** linked in the perception library (`libros2_android_perception.so`)
-- The main app (`libandroid-ros.so`) uses libjpeg-turbo for JPEG decompression instead of `cv::imdecode()`
-- Simple `Point3f` and `Rect` structs replace OpenCV types in the main app
-- Perception library exposes raw RGB buffer API: `ProcessFrame(uint8_t*, width, height)`
-- This reduces APK size by ~5-6 MB and avoids OpenCV dependency conflicts
-
-**State machine implementation:**
-
-- Pipeline state stored as enum: `PipelineState` (STOPPED → AGENT_RUNNING)
-- Node runtime tracking: `NodeRuntimeState` (runningLocally, detectedOnNetwork)
-- Topic probing drives state transitions automatically
-- One-way progression with rollback on node stop (cascades to downstream)
-- UI reflects state in real-time (disabled styling, runtime badges)
-
 ## How to Build
 
 You do not need ROS 2 installed on your machine to build the app.
@@ -289,6 +262,16 @@ You do not need ROS 2 installed on your machine to build the app.
 > ROS 2 Humble is needed on a companion machine to interact with the published topics. Follow [these instructions to install ROS Humble](https://docs.ros.org/en/humble/Installation.html).
 
 ### Computer Setup
+
+Install all required system dependencies:
+
+```bash
+sudo apt install -y \
+  git unzip cmake build-essential \
+  openjdk-21-jdk \
+  adb android-sdk-platform-tools-common \
+  python3-vcstool python3-catkin-pkg-modules python3-empy python3-lark-parser
+```
 
 Download the [Android SDK "Command-line tools only" version](https://developer.android.com/studio#command-tools).
 
@@ -300,26 +283,6 @@ unzip ~/Downloads/commandlinetools-linux-8512546_latest.zip
 
 ```bash
 ./cmdline-tools/bin/sdkmanager --sdk_root=$HOME/android-sdk "build-tools;33.0.2" "build-tools;34.0.0" "platforms;android-33" "platforms;android-34" "ndk;26.3.11579264" "cmake;3.22.1"
-```
-
-Install JDK 21:
-
-```bash
-sudo apt install openjdk-21-jdk
-```
-
-Install adb:
-
-```bash
-# Ubuntu
-sudo apt install adb android-sdk-platform-tools-common
-```
-
-Install Python dependencies:
-
-```bash
-# Ubuntu
-sudo apt install python3-catkin-pkg-modules python3-empy python3-lark-parser
 ```
 
 Create `local.properties` in the repo root pointing to your SDK:
@@ -358,7 +321,10 @@ The object detection perception system requires NCNN model files. These are incl
 - `osnet_ain_x1_0.ncnn.param` - MARS ReID model parameters for tracking
 - `osnet_ain_x1_0.ncnn.bin` - MARS ReID model weights for tracking
 
-**Model specifications:**
+- OSNet-AIN: https://kaiyangzhou.github.io/deep-person-reid/MODEL_ZOO
+- POBED-Yolov9: https://phabricator.ict.tuwien.ac.at/source/Vermin_Collector_ROS2_3D_Object_Detection/
+
+  **Model specifications:**
 
 - **Detection model**: YOLOv9-s trained on Colorado Potato Beetle dataset (3 classes: `cpb_beetle`, `cpb_larva`, `cpb_eggs`)
 - **Input size**: 1280×736 (letterbox resize with padding)
@@ -367,6 +333,10 @@ The object detection perception system requires NCNN model files. These are incl
 
 > [!NOTE]
 > The perception pipeline subscribes to external ZED camera topics (`/zed/zed_node/rgb/image_rect_color/compressed`, `/zed/zed_node/depth/depth_registered`, `/zed/zed_node/point_cloud/cloud_registered`) and publishes 3D-localized detections. The ZED camera should be running on a separate machine on the same ROS 2 network.
+
+### Patch files in `android_patches`
+
+They are quite important as they apply changes to dependencies fetched via the vcstool and which are located in ros.repos file. Applying happens on the `make deps` step.
 
 ### Download ROS Dependencies
 
