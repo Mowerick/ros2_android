@@ -205,6 +205,18 @@ void TargetManagerController::Enable() {
       std::bind(&TargetManagerController::OnFixedPosition, this,
                 std::placeholders::_1));
 
+  scan_limit_sub_ = node->create_subscription<std_msgs::msg::Float32>(
+      "/scan_limit", qos,
+      [this](const std_msgs::msg::Float32::SharedPtr msg) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (!std::isfinite(msg->data) || msg->data <= 0.0f) {
+          LOGW("Invalid /scan_limit %.3f ignored", msg->data);
+          return;
+        }
+        scan_limit_deg_ = msg->data;
+        LOGI("scan_limit_deg updated to %.2f", scan_limit_deg_);
+      });
+
   timer_ = node->create_wall_timer(
       std::chrono::milliseconds(kTimerMs),
       std::bind(&TargetManagerController::StateMachineCallback, this));
@@ -226,6 +238,11 @@ void TargetManagerController::Enable() {
     t_start_ = std::chrono::steady_clock::now();
     fixed_position_mode_ = false;
     last_fixed_position_ = {0.0f, 0.0f};
+    scan_mode_ = false;
+    target_then_scan_mode_ = false;
+    last_target_xyz_.reset();
+    last_cmd_duration_ms_ = 0;
+    last_cmd_scan_limit_  = 0;
   }
 
   enabled_ = true;
@@ -243,6 +260,7 @@ void TargetManagerController::Disable() {
   imu_sub_.reset();
   feedback_sub_.reset();
   fixed_pos_sub_.reset();
+  scan_limit_sub_.reset();
   timer_.reset();
 
   command_pub_.Disable();
@@ -253,6 +271,11 @@ void TargetManagerController::Disable() {
     latest_feedback_.reset();
     imu_quat_.reset();
     pending_action_.reset();
+    scan_mode_ = false;
+    target_then_scan_mode_ = false;
+    last_target_xyz_.reset();
+    last_cmd_duration_ms_ = 0;
+    last_cmd_scan_limit_  = 0;
   }
 
   enabled_ = false;
@@ -351,11 +374,22 @@ void TargetManagerController::OnFixedPosition(
     return;  // No change
   }
 
-  uint8_t res = desired_setup_.resolution;
+  // Adaptive resolution based on planned move distance (mirrors Python's _aim_to_steps).
+  int32_t tilt_at_r1 = DegreesToSteps(tilt, kTiltStepsPerDegAtRes1, 1);
+  int32_t pan_at_r1  = DegreesToSteps(pan,  kRollStepsPerDegAtRes1,  1);
+  int32_t cur_tilt_r1 = (latest_feedback_->resolution > 0)
+      ? latest_feedback_->current_steps[0] / static_cast<int32_t>(latest_feedback_->resolution) : 0;
+  int32_t cur_pan_r1  = (latest_feedback_->resolution > 0)
+      ? latest_feedback_->current_steps[1] / static_cast<int32_t>(latest_feedback_->resolution) : 0;
+  int32_t delta = std::max(std::abs(tilt_at_r1 - cur_tilt_r1),
+                           std::abs(pan_at_r1  - cur_pan_r1));
+  uint8_t res = SelectResolution(delta, kThresholdCoarse, kThresholdFine,
+                                 kResCoarse, kResMid, kResFine);
+
   vermin_collector_ros_msgs::msg::Command cmd;
   cmd.command_type = vermin_collector_ros_msgs::msg::Command::TARGET;
   cmd.step_goals[0] = DegreesToSteps(tilt, kTiltStepsPerDegAtRes1, res);
-  cmd.step_goals[1] = DegreesToSteps(pan, kRollStepsPerDegAtRes1, res);
+  cmd.step_goals[1] = DegreesToSteps(pan,  kRollStepsPerDegAtRes1,  res);
   cmd.step_goals[2] = 0;
   cmd.laser_duration_ms = 0;  // no laser in fixed position mode
   cmd.star_diameter = 0;
@@ -509,6 +543,10 @@ void TargetManagerController::SendTarget(
   cmd.resolution = res;
   command_pub_.Publish(cmd);
 
+  last_cmd_duration_ms_ = cmd.laser_duration_ms;
+  last_cmd_scan_limit_  = cmd.scan_limit;
+  last_target_xyz_ = msg;  // save 3D position for TARGET_THEN_SCAN follow-up
+
   LOGI("Sent TARGET: tilt=%.2f° roll=%.2f° res=%d steps=(%d,%d) star=%u",
        tilt, roll, res, tilt_steps, roll_steps, star);
 }
@@ -516,6 +554,44 @@ void TargetManagerController::SendTarget(
 // ============================================================================
 // Math Utilities
 // ============================================================================
+
+// Build a scan command aimed at target (firing=false, scan_limit>0).
+// Mirrors Python's _build_target_cmd(target_xyz, fb, firing=False, scan=True).
+vermin_collector_ros_msgs::msg::Command TargetManagerController::BuildScanCommand(
+    const geometry_msgs::msg::Point& target, const LatestFeedback& fb) {
+  float tx = static_cast<float>(target.x);
+  float ty = static_cast<float>(target.y);
+  float tz = static_cast<float>(target.z);
+
+  auto [roll, tilt] = ComputeRollTiltDegrees(tx, ty, tz);
+  ClampRollTiltAngles(roll, tilt);
+
+  int32_t tilt_at_r1 = DegreesToSteps(tilt, kTiltStepsPerDegAtRes1, 1);
+  int32_t roll_at_r1 = DegreesToSteps(roll, kRollStepsPerDegAtRes1, 1);
+  int32_t cur_tilt_r1 = (fb.resolution > 0)
+      ? fb.current_steps[0] / static_cast<int32_t>(fb.resolution) : 0;
+  int32_t cur_roll_r1 = (fb.resolution > 0)
+      ? fb.current_steps[1] / static_cast<int32_t>(fb.resolution) : 0;
+  int32_t delta = std::max(std::abs(tilt_at_r1 - cur_tilt_r1),
+                           std::abs(roll_at_r1  - cur_roll_r1));
+  uint8_t res = SelectResolution(delta, kThresholdCoarse, kThresholdFine,
+                                 kResCoarse, kResMid, kResFine);
+
+  int32_t scan_steps = DegreesToSteps(scan_limit_deg_, kTiltStepsPerDegAtRes1, res);
+
+  vermin_collector_ros_msgs::msg::Command cmd;
+  cmd.command_type = vermin_collector_ros_msgs::msg::Command::TARGET;
+  cmd.step_goals[0] = DegreesToSteps(tilt, kTiltStepsPerDegAtRes1, res);
+  cmd.step_goals[1] = DegreesToSteps(roll, kRollStepsPerDegAtRes1, res);
+  cmd.step_goals[2] = 0;
+  cmd.laser_duration_ms = 0;
+  cmd.star_diameter = 0;
+  cmd.scan_limit = static_cast<uint32_t>(std::max(0, scan_steps));
+  cmd.frequency_goals = desired_setup_.frequencies;
+  cmd.en_motors = desired_setup_.en_motors;
+  cmd.resolution = res;
+  return cmd;
+}
 
 // Compute the gravity unit vector in camera/IMU frame.
 // Mirrors aim_math.gravity_in_camera(qx, qy, qz, qw).
@@ -809,9 +885,38 @@ void TargetManagerController::TickExecuting() {
   if (fb.state != kEsp32StateReady) return;
 
   // Command finished.
-  // In TARGET mode, queue return-to-zero as pending_action (sent on next TickReady).
-  // Mirrors Python: pending_action = CMD_TARGET step_goals=(0,0,0)
-  if (!fixed_position_mode_) {
+  if (fixed_position_mode_) {
+    state_ = TargetManagerState::FIXED_POSITION_MODE;
+    LOGI("EXECUTING -> FIXED_POSITION_MODE");
+    return;
+  }
+
+  const bool fired   = last_cmd_duration_ms_ > 0;
+  const bool scanned = last_cmd_scan_limit_  > 0;
+
+  if (target_then_scan_mode_ && fired && last_target_xyz_.has_value()) {
+    // TARGET_THEN_SCAN: laser shot done -> queue scan at same position
+    pending_action_ = BuildScanCommand(*last_target_xyz_, fb);
+    last_cmd_duration_ms_ = 0;
+    last_cmd_scan_limit_  = pending_action_->scan_limit;
+    LOGI("EXECUTING -> READY (TARGET_THEN_SCAN: queuing scan)");
+
+  } else if (target_then_scan_mode_ && scanned && last_target_xyz_.has_value()) {
+    // TARGET_THEN_SCAN: scan done -> re-queue scan (new target from OnTarget overrides this)
+    pending_action_ = BuildScanCommand(*last_target_xyz_, fb);
+    last_cmd_duration_ms_ = 0;
+    last_cmd_scan_limit_  = pending_action_->scan_limit;
+    LOGI("EXECUTING -> READY (TARGET_THEN_SCAN: re-scan)");
+
+  } else if (scan_mode_ && last_target_xyz_.has_value()) {
+    // SCAN mode: loop forever at last target position
+    pending_action_ = BuildScanCommand(*last_target_xyz_, fb);
+    last_cmd_duration_ms_ = 0;
+    last_cmd_scan_limit_  = pending_action_->scan_limit;
+    LOGI("EXECUTING -> READY (SCAN: repeating)");
+
+  } else if (fired) {
+    // Plain TARGET mode: return to zero
     vermin_collector_ros_msgs::msg::Command ret;
     ret.command_type = vermin_collector_ros_msgs::msg::Command::TARGET;
     ret.step_goals[0] = 0;
@@ -824,12 +929,14 @@ void TargetManagerController::TickExecuting() {
     ret.en_motors = desired_setup_.en_motors;
     ret.resolution = desired_setup_.resolution;
     pending_action_ = ret;
-    state_ = TargetManagerState::READY;
+    last_cmd_duration_ms_ = 0;
+    last_cmd_scan_limit_  = 0;
     LOGI("EXECUTING -> READY (return-to-zero pending)");
   } else {
-    state_ = TargetManagerState::FIXED_POSITION_MODE;
-    LOGI("EXECUTING -> FIXED_POSITION_MODE");
+    LOGI("EXECUTING -> READY");
   }
+
+  state_ = TargetManagerState::READY;
 }
 
 }  // namespace ros2_android

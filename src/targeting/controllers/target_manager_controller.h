@@ -12,6 +12,7 @@
 
 #include <geometry_msgs/msg/point.hpp>
 #include <sensor_msgs/msg/imu.hpp>
+#include <std_msgs/msg/float32.hpp>
 #include <std_msgs/msg/float32_multi_array.hpp>
 #include <vermin_collector_ros_msgs/msg/command.hpp>
 #include <vermin_collector_ros_msgs/msg/feedback.hpp>
@@ -96,6 +97,8 @@ class TargetManagerController : public SensorDataProvider {
   void SendSoftHoming();
   void SendTarget(const geometry_msgs::msg::Point& msg);
   void ReturnToZero();
+  vermin_collector_ros_msgs::msg::Command BuildScanCommand(
+      const geometry_msgs::msg::Point& target, const LatestFeedback& fb);
 
   // Math (static, pure)
   static std::tuple<float, float, float> GravityInCamera(
@@ -117,6 +120,7 @@ class TargetManagerController : public SensorDataProvider {
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub_;
   rclcpp::Subscription<vermin_collector_ros_msgs::msg::Feedback>::SharedPtr feedback_sub_;
   rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr fixed_pos_sub_;
+  rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr scan_limit_sub_;
 
   rclcpp::TimerBase::SharedPtr timer_;
 
@@ -148,6 +152,14 @@ class TargetManagerController : public SensorDataProvider {
 
   // Last fixed position (deduplication)
   std::array<float, 2> last_fixed_position_ = {0.0f, 0.0f};
+
+  // Scan mode state (mirrors Python SCAN and TARGET_THEN_SCAN modes)
+  bool scan_mode_ = false;
+  bool target_then_scan_mode_ = false;
+  float scan_limit_deg_ = 30.0f;
+  std::optional<geometry_msgs::msg::Point> last_target_xyz_;
+  uint32_t last_cmd_duration_ms_ = 0;
+  uint32_t last_cmd_scan_limit_  = 0;
 };
 
 }  // namespace ros2_android
