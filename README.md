@@ -147,16 +147,26 @@ The app publishes the following topics that can be discovered and consumed by ot
 
 - `/scan` - `sensor_msgs/LaserScan` - YDLIDAR scan data (range, angle, intensity)
 
-**Pipeline (perception & positioning):**
+**Pipeline (perception & positioning) - subscribed (inputs):**
 
-- `/<device_id>/cpb_beetle_center` - `geometry_msgs/Point` - 3D beetle detection center
-- `/<device_id>/cpb_beetle` - `sensor_msgs/PointCloud2` - cropped beetle point cloud
-- `/<device_id>/cpb_larva_center` - `geometry_msgs/Point` - 3D larva detection center
-- `/<device_id>/cpb_larva` - `sensor_msgs/PointCloud2` - cropped larva point cloud
-- `/<device_id>/cpb_eggs_center` - `geometry_msgs/Point` - 3D egg detection center
-- `/<device_id>/cpb_eggs` - `sensor_msgs/PointCloud2` - cropped egg point cloud
-- `/ESP32_Command` - `vermin_collector_ros_msgs/Command` - motor commands to ESP32 via micro-ROS Agent
+- `/zed/zed_node/rgb/image_rect_color/compressed` - `sensor_msgs/CompressedImage` - ZED RGB image (object detection input)
+- `/zed/zed_node/depth/depth_registered` - `sensor_msgs/Image` - ZED depth map (3D localization input)
+- `/zed/zed_node/point_cloud/cloud_registered` - `sensor_msgs/PointCloud2` - ZED point cloud (3D localization + crop input)
+- `/zed/zed_node/imu/data` - `sensor_msgs/Imu` - ZED IMU (target manager orientation calibration)
+- `/cpb_eggs_center` - `geometry_msgs/Point` - egg cluster location (target manager input from object detection)
 - `/ESP32_Feedback` - `vermin_collector_ros_msgs/Feedback` - motor state feedback from ESP32 via micro-ROS Agent
+- `/pan_tilt_fixed_position` - `std_msgs/Float32MultiArray` - manual pan/tilt override (target manager)
+- `/scan_limit` - `std_msgs/Float32` - configurable scan angle limit (target manager)
+
+**Pipeline (perception & positioning) - published (outputs):**
+
+- `/cpb_beetle_center` - `geometry_msgs/Point` - 3D beetle detection center
+- `/cpb_beetle` - `sensor_msgs/PointCloud2` - cropped beetle point cloud
+- `/cpb_larva_center` - `geometry_msgs/Point` - 3D larva detection center
+- `/cpb_larva` - `sensor_msgs/PointCloud2` - cropped larva point cloud
+- `/cpb_eggs_center` - `geometry_msgs/Point` - 3D egg detection center
+- `/cpb_eggs` - `sensor_msgs/PointCloud2` - cropped egg point cloud
+- `/ESP32_Command` - `vermin_collector_ros_msgs/Command` - motor commands to ESP32 via micro-ROS Agent
 
 **Beetle Predator (handheld detection):**
 
@@ -201,25 +211,18 @@ TARGET_RUNNING → AGENT_RUNNING
 
 **Output (published topics):**
 
-- `/<device_id>/cpb_beetle_center` - `geometry_msgs/Point` - 3D center location of beetle detections
-- `/<device_id>/cpb_beetle` - `sensor_msgs/PointCloud2` - Cropped point cloud for beetle
-- `/<device_id>/cpb_larva_center` - `geometry_msgs/Point` - 3D center location of larva detections
-- `/<device_id>/cpb_larva` - `sensor_msgs/PointCloud2` - Cropped point cloud for larva
-- `/<device_id>/cpb_eggs_center` - `geometry_msgs/Point` - 3D center location of egg detections
-- `/<device_id>/cpb_eggs` - `sensor_msgs/PointCloud2` - Cropped point cloud for eggs
+- `/cpb_beetle_center` - `geometry_msgs/Point` - 3D center location of beetle detections
+- `/cpb_beetle` - `sensor_msgs/PointCloud2` - Cropped point cloud for beetle
+- `/cpb_larva_center` - `geometry_msgs/Point` - 3D center location of larva detections
+- `/cpb_larva` - `sensor_msgs/PointCloud2` - Cropped point cloud for larva
+- `/cpb_eggs_center` - `geometry_msgs/Point` - 3D center location of egg detections
+- `/cpb_eggs` - `sensor_msgs/PointCloud2` - Cropped point cloud for eggs
 
 **Detection classes:**
 
 - `cpb_beetle` (class 0) - Adult Colorado Potato Beetle
 - `cpb_larva` (class 1) - CPB larvae
 - `cpb_eggs` (class 2) - CPB egg clusters
-
-**Performance:**
-
-- Model size: YOLOv9-s (~19 MB) + MARS-small128 (~5.4 MB)
-- Input resolution: 1280×736
-- Feature dimension: 128-D appearance features for tracking
-- Inference backend: NCNN (Tencent) optimized for ARM NEON
 
 ### Target Manager Node
 
@@ -285,35 +288,6 @@ You do not need ROS 2 installed on your machine to build the app.
 > [!NOTE]
 > ROS 2 Humble is needed on a companion machine to interact with the published topics. Follow [these instructions to install ROS Humble](https://docs.ros.org/en/humble/Installation.html).
 
-### Dependencies
-
-**Android SDK Components:**
-
-- Command-line Tools 8.0
-- Platform Tools 35.0.2
-- Build Tools 33.0.2 and 34.0.0
-- Platform API 33 and 34
-- NDK 26.3.11579264
-- CMake 3.22.1
-
-**Build Tools:**
-
-- JDK 21
-- Gradle 8.x (via wrapper)
-- GNU Make
-- vcstool (for ROS 2 dependency management)
-- zip/unzip
-- git
-- adb (Android Debug Bridge)
-
-**Python 3 Packages:**
-
-- catkin-pkg
-- empy 3.3.4 (ROS 2 Humble requires 3.x, not 4.x)
-- lark-parser
-- pip
-- setuptools
-
 ### Computer Setup
 
 Download the [Android SDK "Command-line tools only" version](https://developer.android.com/studio#command-tools).
@@ -323,8 +297,6 @@ mkdir ~/android-sdk
 cd ~/android-sdk
 unzip ~/Downloads/commandlinetools-linux-8512546_latest.zip
 ```
-
-Install SDK components (if it gives a linkage error try `sudo apt install openjdk-21-jre-headless`):
 
 ```bash
 ./cmdline-tools/bin/sdkmanager --sdk_root=$HOME/android-sdk "build-tools;33.0.2" "build-tools;34.0.0" "platforms;android-33" "platforms;android-34" "ndk;26.3.11579264" "cmake;3.22.1"
@@ -341,8 +313,6 @@ Install adb:
 ```bash
 # Ubuntu
 sudo apt install adb android-sdk-platform-tools-common
-# Fedora
-sudo dnf install android-tools
 ```
 
 Install Python dependencies:
@@ -350,8 +320,6 @@ Install Python dependencies:
 ```bash
 # Ubuntu
 sudo apt install python3-catkin-pkg-modules python3-empy python3-lark-parser
-# Fedora
-sudo dnf install python3-catkin_pkg python3-empy python3-lark-parser
 ```
 
 Create `local.properties` in the repo root pointing to your SDK:
@@ -361,7 +329,7 @@ echo "sdk.dir=$HOME/android-sdk" > local.properties
 ```
 
 You may need to do additional setup to use adb.
-Follow the [Set up a device for development](https://developer.android.com/studio/run/device#setting-up) instructions if you're using Ubuntu, or follow [the instructions in this thread](<https://forums.fedoraforum.org/showthread.php?298965-HowTo-set-up-adb-(Android-Debug-Bridge)-on-Fedora-20>) if you're using Fedora.
+Follow the [Set up a device for development](https://developer.android.com/studio/run/device#setting-up) instructions if you're using Ubuntu.
 
 ### Create Debug Keys
 
@@ -381,28 +349,21 @@ git submodule update
 
 ### Model Assets Setup
 
-The object detection perception system requires NCNN model files that are not included in this repository (not yet open-sourced). You must manually provide the following model files in the `app/src/main/assets/models/` directory:
+The object detection perception system requires NCNN model files. These are included in the repository under `app/src/main/assets/models/`:
 
 **Required files:**
 
-- `yolov9_s_pobed.ncnn.param` (70 KB) - YOLOv9-s detection model parameters
-- `yolov9_s_pobed.ncnn.bin` (19 MB) - YOLOv9-s detection model weights
-- `osnet_ain_x1_0.ncnn.param` (9.2 KB) - MARS ReID model parameters for tracking
-- `osnet_ain_x1_0.ncnn.bin` (5.4 MB) - MARS ReID model weights for tracking
+- `yolov9_s_pobed.ncnn.param` - YOLOv9-s detection model parameters
+- `yolov9_s_pobed.ncnn.bin` - YOLOv9-s detection model weights
+- `osnet_ain_x1_0.ncnn.param` - MARS ReID model parameters for tracking
+- `osnet_ain_x1_0.ncnn.bin` - MARS ReID model weights for tracking
 
 **Model specifications:**
 
 - **Detection model**: YOLOv9-s trained on Colorado Potato Beetle dataset (3 classes: `cpb_beetle`, `cpb_larva`, `cpb_eggs`)
 - **Input size**: 1280×736 (letterbox resize with padding)
-- **ReID model**: MARS-small128 for Deep SORT multi-object tracking
+- **ReID model**: OSNet AIN x1.0 for Deep SORT multi-object tracking
 - **Feature dimension**: 128-D appearance features
-
-Create the directory and copy your model files:
-
-```bash
-mkdir -p app/src/main/assets/models
-cp /path/to/your/models/*.ncnn.{param,bin} app/src/main/assets/models/
-```
 
 > [!NOTE]
 > The perception pipeline subscribes to external ZED camera topics (`/zed/zed_node/rgb/image_rect_color/compressed`, `/zed/zed_node/depth/depth_registered`, `/zed/zed_node/point_cloud/cloud_registered`) and publishes 3D-localized detections. The ZED camera should be running on a separate machine on the same ROS 2 network.
@@ -507,28 +468,6 @@ make clean-app
 make clean-native
 ```
 
-### Helpful commands for testing
-
-Publish imu data if not available
-
-```bash
-ros2 topic pub /zed/zed_node/imu/data sensor_msgs/msg/Imu "{
-  header: {
-    stamp: {sec: 0, nanosec: 0},
-    frame_id: 'hello_world'
-  },
-  orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0},
-  angular_velocity: {x: 0.0, y: 0.0, z: 0.0},
-  linear_acceleration: {x: 0.0, y: 0.0, z: 0.0}
-}"
-```
-
-Publish explicit topic from rosbag
-
-```bash
-ros2 bag play . --topic /zed/zed_node/rgb/image_rect_color/compressed
-```
-
 ### Quick ROS 2 Network Setup
 
 Use the provided script to configure your host machine for ROS 2 discovery with the Android device:
@@ -550,15 +489,69 @@ ros2 topic list
 **Example:**
 
 ```bash
-./scripts/setup_ros2_network.sh 192.168.1.42 1
+./scripts/setup_ros2_network.sh 192.168.0.100 1
 export ROS_DOMAIN_ID=1
 ros2 topic list
 ```
 
 > [!NOTE]
-> The domain ID must match the setting in the Android app (default: 1). For detailed testing instructions and troubleshooting, see the [Testing Guide](scripts/tests/README.md).
+> The domain ID must match the setting in the Android app (default: 1). For detailed testing instructions and troubleshooting, see the test READMEs in `scripts/tests/`.
 
-## Testing
+## Testing complete ROS 2 Subsystem locally without external devices
+
+See `Quick ROS2 Network setup` section before starting this.
+
+Start ROS inside the ros2_android app with the same `ROS_DOMAIN_ID` setting you used in the network setup and choose the correct Network Interface so you are in the same network as your computer.
+
+### Step 1: Replay Ros bag with ZED 2i Camera topics
+
+```bash
+ros2 bag play .
+```
+
+Publish explicit topic from rosbag:
+
+```bash
+ros2 bag play . --topic /zed/zed_node/rgb/image_rect_color/compressed
+```
+
+#### Step 1.1 (Optional)
+
+Play imu data if not available inside the ros bag.
+
+```bash
+ros2 topic pub -r 10 /zed/zed_node/imu/data sensor_msgs/msg/Imu \
+  "{header: {frame_id: 'imu'}, orientation: {x: -0.7071068, y: 0.0, z: 0.0, w: 0.7071068}}"
+```
+
+### Step 2: Probe Topic to verify topics are being published
+
+### Step 3: Start the Object Detection node
+
+#### Step 3.1: (Optional) Start playing Ros bag or keep it paused
+
+### Step 4: Start Target manager
+
+### Step 5: Micro-ROS Agent steps to cheese target manager and to be able to test the whole pipeline
+
+#### Step 5.1 - Connect ESP32 flashed with [pan_and_tilt_zephyr_app](https://github.com/alex120400/pan_and_tilt_zephyr_app.git)
+
+#### Step 5.2 - Start micro-ROS Agent in the ROS2_ANDROID App (Need to have all other ros2 nodes running aswell to advance to be able to start the agent)
+
+#### Step 5.3 - Send fake imu data
+
+```bash
+opros2 topic pub -r 10 /zed/zed_node/imu/data sensor_msgs/msg/Imu \
+  "{header: {frame_id: 'imu'}, orientation: {x: -0.7071068, y: 0.0, z: 0.0, w: 0.7071068}}"
+```
+
+#### Step 5.4 - cheese the state transition of the esp32
+
+Stop the micro-ROS Agent unplug the esp32 from the phone to wipe its memory, replug it and start the micro-ROS Agent. Now we have the EPS32 and Target Manager in a state where we can send commands to it and test the ROS 2 Subsystem without having any real hardware connecte like motor steppers.
+
+---
+
+### Testing with scripts
 
 The Android app publishes sensor and camera data as ROS 2 topics that can be consumed by nodes running on a host machine (Linux/macOS). This enables visualization, logging, and integration with the full ROS 2 ecosystem.
 
@@ -569,4 +562,4 @@ For complete testing instructions, including:
 - Manual testing procedures
 - Troubleshooting common issues
 
-See the **[Testing Guide](scripts/tests/README.md)**.
+See the test READMEs in `scripts/tests/`: **[sensors](scripts/tests/sensors/README.md)**, **[object detection](scripts/tests/object_detection/README.md)**
