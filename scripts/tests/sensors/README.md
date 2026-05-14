@@ -36,8 +36,7 @@ Interactive Python tool for visualizing and testing sensor data published by the
 - **Camera Image** (`/<device_id>/camera/<id>/image_color`) - Raw/compressed image via rqt_image_view
 - **Camera Info** (`/<device_id>/camera/<id>/camera_info`) - Calibration data display
 
-> [!NOTE]
-> `<device_id>` is the device identifier configured in the ros2_android app (e.g., `pixel_7`). Replace it with your actual device ID when running tests.
+> [!NOTE] > `<device_id>` is the device identifier configured in the ros2_android app (e.g., `pixel_7`). Replace it with your actual device ID when running tests.
 
 ## Prerequisites
 
@@ -58,12 +57,6 @@ sudo apt install ros-humble-desktop
 
 ```bash
 source /opt/ros/humble/setup.bash
-```
-
-Add this to your `~/.bashrc` to make it permanent:
-
-```bash
-echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc
 ```
 
 ### 3. Install rqt_image_view (for camera visualization)
