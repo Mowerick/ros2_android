@@ -39,31 +39,33 @@ An Android app that deploys a ROS 2 Humble Perception & Positioning subsystem on
 │   - GpsManager (FusedLocationProviderClient)    │
 └─────┬────────────────────────────────┬──────────┘
       │                                │
-      │ Camera2 API                    │ JNI Bridge
-      │ (Java)                         │ (NativeBridge.kt ↔ jni_bridge.cc)
+      │ GPS location (JNI)             │ JNI Bridge
+      │                                │ (NativeBridge.kt ↔ jni_bridge.cc)
       │                                │ - jobject construction
       │                                │ - Event callbacks
 ┌─────▼────────────────────────────────▼──────────┐
 │   C++ Native Layer                              │
+│                                                 │
 │   ┌───────────────────────────────────────┐     │
-│   │ ROS 2 Interface (rclcpp)              │     │
-│   │ - Node lifecycle                      │     │
-│   │ - Publisher / Subscriber management   │     │
+│   │ Platform APIs (Android NDK)           │     │
+│   │ - ASensorManager  (IMU sensor events) │     │
+│   │ - ACameraManager / AImageReader       │     │
+│   │ - USB serial I/O  (LiDAR, micro-ROS)  │     │
 │   └───────────────┬───────────────────────┘     │
-│                   │                             │
+│                   │ raw events / frames         │
 │   ┌───────────────▼───────────────────────┐     │
 │   │ Sensor Controllers                    │     │
 │   │ - IMU (accel, gyro, mag, baro, lux)   │     │
 │   │ - GPS (receives via JNI)              │     │
-│   │ - Camera (front/back via Camera2)     │     │
+│   │ - Camera (front/back via Camera2 NDK) │     │
 │   │ - LiDAR (YDLIDAR via USB serial)      │     │
-│   └───┬───────────────────────┬───────────┘     │
-│       │                       │                 │
-│   ┌───▼──────────┐      ┌─────▼────────┐        │
-│   │ ASensorEvent │      │ Camera frame │        │
-│   │   Queue      │      │   callbacks  │        │
-│   │              │      │   (via JNI)  │        │
-│   └──────────────┘      └──────────────┘        │
+│   └───────────────┬───────────────────────┘     │
+│                   │ publish(msg)                │
+│   ┌───────────────▼───────────────────────┐     │
+│   │ ROS 2 Interface (rclcpp)              │     │
+│   │ - Node lifecycle                      │     │
+│   │ - Publisher / Subscriber management   │     │
+│   └───────────────────────────────────────┘     │
 │                                                 │
 │   ┌─────────────────────────────────────────┐   │
 │   │ Perception & Positioning Pipeline       │   │
@@ -91,12 +93,6 @@ An Android app that deploys a ROS 2 Humble Perception & Positioning subsystem on
 │   └─────────────────────────────────────────┘   │
 └──────┬──────────────────────────────────────────┘
        │
-┌──────▼──────┐
-│ ASensor     │
-│ Manager     │
-│ (NDK)       │
-└─────────────┘
-       │
        │ Cyclone DDS (UDP multicast discovery + unicast data)
        │
 ┌─────────▼───────────────────────────────────────────────────┐
@@ -114,7 +110,7 @@ The native layer cross-compiles ~70 ROS 2 Humble packages via a CMake superbuild
 
 - **IMU sensors** (accelerometer, gyroscope, magnetometer, barometer, illuminance) - acquired in C++ via `ASensorManager` (NDK), event queue forwarded to ROS controllers
 - **GPS** - acquired in Kotlin via `FusedLocationProviderClient` (Google Play Services - required on device), location updates passed to C++ GPS controller via JNI
-- **Cameras** - acquired in Java via `Camera2` API, frames passed to C++ camera controllers via JNI for encoding and publishing
+- **Cameras** - acquired in C++ via Camera2 NDK (`ACameraManager`/`AImageReader`), YUV frames converted to BGR8 in native layer and published as ROS 2 topics; RGBA frames sent to Kotlin via JNI callbacks for live UI preview
 - **USB LiDAR** - YDLIDAR connected via USB serial (JNI serial bridge: C++ SDK calls routed through JNI to Kotlin `BufferedUsbSerialPort` wrapping `mik3y/usb-serial-for-android`), scan data published by C++ LiDAR controller
 - **Beetle Predator** - rear camera frames (RGBA via `GetLastFrame()`) + GPS location (`GetLastLocation()`) combined with NCNN inference, publishes `vermin_collector_ros_msgs/BeetleDetection` for confirmed Deep SORT tracks
 
