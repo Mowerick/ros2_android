@@ -86,8 +86,8 @@ class PipelineStateMachine(
         val state = _nodeStates.value[nodeId]
         // Allow stopping an active probe
         if (state?.isProbing == true) return true
-        // Can't probe if already running locally
-        if (state?.runningLocally == true) return false
+        // Can't probe if already running locally or detected on network
+        if (state?.runningLocally == true || state?.detectedOnNetwork == true) return false
 
         // Check if the pipeline FSM is in the correct state for this node to probe
         return when (nodeId) {
@@ -381,11 +381,11 @@ class PipelineStateMachine(
                 subscribesTo = listOf(
                     TopicInfo("/cpb_eggs_center", "geometry_msgs/msg/Point"),
                     TopicInfo("/zed/zed_node/imu/data", "sensor_msgs/msg/Imu"),
-                    TopicInfo("ESP32_Feedback", "vermin_collector_ros_msgs/msg/Feedback"),
+                    TopicInfo("/ESP32_Feedback", "vermin_collector_ros_msgs/msg/Feedback"),
                     TopicInfo("/pan_tilt_fixed_position", "std_msgs/msg/Float32MultiArray")
                 ),
                 publishesTo = listOf(
-                    TopicInfo("ESP32_Command", "vermin_collector_ros_msgs/msg/Command")
+                    TopicInfo("/ESP32_Command", "vermin_collector_ros_msgs/msg/Command")
                 ),
                 upstreamNodeId = "object_detection",
                 isExternal = false
@@ -395,10 +395,10 @@ class PipelineStateMachine(
                 name = "micro-ROS Agent",
                 description = "XRCE-DDS bridge between ROS 2 DDS network and ESP32-S3 microcontroller via USB CDC-ACM serial at 460800 baud. Bridges ESP32_Command/ESP32_Feedback topics for 3-axis stepper control (pitch, yaw, slide) with laser.",
                 subscribesTo = listOf(
-                    TopicInfo("ESP32_Command", "vermin_collector_ros_msgs/msg/Command")
+                    TopicInfo("/ESP32_Command", "vermin_collector_ros_msgs/msg/Command")
                 ),
                 publishesTo = listOf(
-                    TopicInfo("ESP32_Feedback", "vermin_collector_ros_msgs/msg/Feedback")
+                    TopicInfo("/ESP32_Feedback", "vermin_collector_ros_msgs/msg/Feedback")
                 ),
                 upstreamNodeId = "target_manager",
                 isExternal = false
