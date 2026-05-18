@@ -517,6 +517,31 @@ Stop the micro-ROS Agent unplug the esp32 from the phone to wipe its memory, rep
 
 ---
 
+## Model Conversion (NCNN)
+
+The Android perception pipeline requires the PyTorch models converted to NCNN format. Conversion
+scripts are in [`ros2_android/scripts/model_conversion/`](ros2_android/scripts/model_conversion/).
+See the [README](ros2_android/scripts/model_conversion/README.md) there for full dependency and
+usage details.
+
+```bash
+# Enter the conversion environment (provides python3, pnnx, ncnnoptimize, torchreid, onnx, torch)
+nix develop ./yolov9
+
+# Convert YOLOv9-S (requires Vermin_Collector_ROS2_3D_Object_Detection repo for export.py)
+bash ros2_android/scripts/model_conversion/convert_yolov9.sh \
+  --yolov9-repo ~/uni_projects/ROS2/Vermin_Collector_ROS2_3D_Object_Detection
+
+# Convert OSNet-AIN ReID model (self-contained)
+bash ros2_android/scripts/model_conversion/convert_osnet.sh
+```
+
+Output files (`output/yolov9_s_pobed.ncnn.{param,bin}` and `output/osnet_reid.ncnn.{param,bin}`)
+are placed in the `output/` directory next to the scripts and must be copied to the Android app's
+assets before building.
+
+---
+
 ### Testing with scripts
 
 The Android app publishes sensor and camera data as ROS 2 topics that can be consumed by nodes running on a host machine (Linux/macOS). This enables visualization, logging, and integration with the full ROS 2 ecosystem.
