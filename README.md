@@ -460,6 +460,33 @@ export ROS_DOMAIN_ID=1
 ros2 topic list
 ```
 
+---
+
+## Model Conversion (NCNN)
+
+The Android perception pipeline requires the PyTorch models converted to NCNN format. Conversion
+scripts are in [`ros2_android/scripts/model_conversion/`](ros2_android/scripts/model_conversion/).
+See the [README](ros2_android/scripts/model_conversion/README.md) there for full dependency and
+usage details.
+
+```bash
+# Enter the conversion environment (provides python3, pnnx, ncnnoptimize, torchreid, onnx, torch)
+nix develop ./yolov9
+
+# Convert YOLOv9-S (requires Vermin_Collector_ROS2_3D_Object_Detection repo for export.py)
+bash ros2_android/scripts/model_conversion/convert_yolov9.sh \
+  --yolov9-repo ~/uni_projects/ROS2/Vermin_Collector_ROS2_3D_Object_Detection
+
+# Convert OSNet-AIN ReID model (self-contained)
+bash ros2_android/scripts/model_conversion/convert_osnet.sh
+```
+
+Output files (`output/yolov9_s_pobed.ncnn.{param,bin}` and `output/osnet_reid.ncnn.{param,bin}`)
+are placed in the `output/` directory next to the scripts and must be copied to the Android app's
+assets before building.
+
+---
+
 > [!NOTE]
 > The domain ID must match the setting in the Android app (default: 1). For detailed testing instructions and troubleshooting, see the test READMEs in `scripts/tests/`.
 
@@ -514,31 +541,6 @@ opros2 topic pub -r 10 /zed/zed_node/imu/data sensor_msgs/msg/Imu \
 #### Step 5.4 - cheese the state transition of the esp32
 
 Stop the micro-ROS Agent unplug the esp32 from the phone to wipe its memory, replug it and start the micro-ROS Agent. Now we have the EPS32 and Target Manager in a state where we can send commands to it and test the ROS 2 Subsystem without having any real hardware connecte like motor steppers.
-
----
-
-## Model Conversion (NCNN)
-
-The Android perception pipeline requires the PyTorch models converted to NCNN format. Conversion
-scripts are in [`ros2_android/scripts/model_conversion/`](ros2_android/scripts/model_conversion/).
-See the [README](ros2_android/scripts/model_conversion/README.md) there for full dependency and
-usage details.
-
-```bash
-# Enter the conversion environment (provides python3, pnnx, ncnnoptimize, torchreid, onnx, torch)
-nix develop ./yolov9
-
-# Convert YOLOv9-S (requires Vermin_Collector_ROS2_3D_Object_Detection repo for export.py)
-bash ros2_android/scripts/model_conversion/convert_yolov9.sh \
-  --yolov9-repo ~/uni_projects/ROS2/Vermin_Collector_ROS2_3D_Object_Detection
-
-# Convert OSNet-AIN ReID model (self-contained)
-bash ros2_android/scripts/model_conversion/convert_osnet.sh
-```
-
-Output files (`output/yolov9_s_pobed.ncnn.{param,bin}` and `output/osnet_reid.ncnn.{param,bin}`)
-are placed in the `output/` directory next to the scripts and must be copied to the Android app's
-assets before building.
 
 ---
 
