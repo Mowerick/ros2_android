@@ -226,8 +226,9 @@ class PerceptionController : public SensorDataProvider {
    *   x_scaled = floor(x / model_input_size[0] * pointcloud_size[0])
    *   y_scaled = floor(y / model_input_size[1] * pointcloud_size[1])
    *   idx = x_scaled + y_scaled * pointcloud_size[0]
+   * cloud_w/cloud_h are the actual cloud dimensions (dynamic, not hardcoded).
    */
-  static int GetCloudFlatIndex(int x, int y);
+  static int GetCloudFlatIndex(int x, int y, int cloud_w, int cloud_h);
 
   /**
    * Get 3D world coordinates from point cloud at bbox center

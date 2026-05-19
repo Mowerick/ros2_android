@@ -558,13 +558,13 @@ void PerceptionController::ProcessFrame(
 //
 // x, y are in model_input_size space (640x352).
 // ros2_numpy flattens the cloud to 1D, so byte offset = idx * point_step.
-int PerceptionController::GetCloudFlatIndex(int x, int y)
+int PerceptionController::GetCloudFlatIndex(int x, int y, int cloud_w, int cloud_h)
 {
   int x_scaled = static_cast<int>(
-      static_cast<float>(x) / kModelInputWidth * kPointcloudWidth);
+      static_cast<float>(x) / kModelInputWidth * cloud_w);
   int y_scaled = static_cast<int>(
-      static_cast<float>(y) / kModelInputHeight * kPointcloudHeight);
-  return x_scaled + y_scaled * kPointcloudWidth;
+      static_cast<float>(y) / kModelInputHeight * cloud_h);
+  return x_scaled + y_scaled * cloud_w;
 }
 
 Point3f PerceptionController::Get3DLocation(
@@ -596,7 +596,7 @@ Point3f PerceptionController::Get3DLocation(
   }
 
   // Python flat index formula (object_detection.py line 330, 340)
-  int flat_idx = GetCloudFlatIndex(x, y);
+  int flat_idx = GetCloudFlatIndex(x, y, cloud.width, cloud.height);
   size_t byte_offset = static_cast<size_t>(flat_idx) * cloud.point_step;
 
   if (byte_offset + z_offset + sizeof(float) > cloud.data.size())
@@ -641,15 +641,16 @@ sensor_msgs::msg::PointCloud2::UniquePtr PerceptionController::CropPointCloud(
   cropped->is_dense = false;
 
   // Bbox is in model_input_size space (640x352).
-  // Depth image is full-resolution (e.g. 1920x1080) - scale bbox to depth coords.
+  // Depth image may be a different resolution (e.g. 1920x1080) - scale coords when
+  // accessing the depth buffer, but keep the loop in model space so that
+  // GetCloudFlatIndex (which also expects model-space coords) stays correct.
   float scale_x = static_cast<float>(depth.width) / kModelInputWidth;
   float scale_y = static_cast<float>(depth.height) / kModelInputHeight;
-  int x1 = std::max(0, static_cast<int>(bbox.x * scale_x));
-  int y1 = std::max(0, static_cast<int>(bbox.y * scale_y));
-  int x2 = std::min(static_cast<int>(depth.width),
-                    static_cast<int>((bbox.x + bbox.width) * scale_x));
-  int y2 = std::min(static_cast<int>(depth.height),
-                    static_cast<int>((bbox.y + bbox.height) * scale_y));
+
+  int x1 = std::max(0, bbox.x);
+  int y1 = std::max(0, bbox.y);
+  int x2 = std::min(kModelInputWidth, bbox.x + bbox.width);
+  int y2 = std::min(kModelInputHeight, bbox.y + bbox.height);
 
   int crop_width = x2 - x1;
   int crop_height = y2 - y1;
@@ -660,17 +661,25 @@ sensor_msgs::msg::PointCloud2::UniquePtr PerceptionController::CropPointCloud(
     return nullptr;
   }
 
+  const float *depth_data = reinterpret_cast<const float *>(depth.data.data());
+  const int depth_row_stride = static_cast<int>(depth.step / sizeof(float));
+
+  // Helper: sample depth at a model-space (mx, my) coordinate
+  auto sample_depth = [&](int mx, int my) -> float {
+    int dx = std::min(static_cast<int>(mx * scale_x), static_cast<int>(depth.width) - 1);
+    int dy = std::min(static_cast<int>(my * scale_y), static_cast<int>(depth.height) - 1);
+    return depth_data[dy * depth_row_stride + dx];
+  };
+
   // Calculate median depth in bbox (Python line 288)
   std::vector<float> depth_values;
   depth_values.reserve(crop_width * crop_height);
 
-  const float *depth_data = reinterpret_cast<const float *>(depth.data.data());
-  const int depth_row_stride = static_cast<int>(depth.step / sizeof(float));
   for (int y = y1; y < y2; ++y)
   {
     for (int x = x1; x < x2; ++x)
     {
-      float d = depth_data[y * depth_row_stride + x];
+      float d = sample_depth(x, y);
       if (std::isfinite(d) && d > 0.0f)
       {
         depth_values.push_back(d);
@@ -687,11 +696,11 @@ sensor_msgs::msg::PointCloud2::UniquePtr PerceptionController::CropPointCloud(
     float sample_center = (depth.data.size() >= static_cast<size_t>((depth.height / 2 * depth_row_stride + depth.width / 2 + 1) * sizeof(float)))
                               ? depth_data[depth.height / 2 * depth_row_stride + depth.width / 2]
                               : -1.0f;
-    LOGW("No valid depth values in bbox [%d,%d,%d,%d] | depth %dx%d enc=%s step=%u data=%zu | raw[0]=%.4f raw[center]=%.4f | bbox x1=%d y1=%d x2=%d y2=%d stride=%d",
+    LOGW("No valid depth values in bbox [%d,%d,%d,%d] | depth %dx%d enc=%s step=%u data=%zu | raw[0]=%.4f raw[center]=%.4f | model bbox x1=%d y1=%d x2=%d y2=%d scale=%.2fx%.2f",
          bbox.x, bbox.y, bbox.width, bbox.height,
          depth.width, depth.height, depth.encoding.c_str(), depth.step,
          depth.data.size(), sample0, sample_center,
-         x1, y1, x2, y2, depth_row_stride);
+         x1, y1, x2, y2, scale_x, scale_y);
     return nullptr;
   }
 
@@ -728,7 +737,7 @@ sensor_msgs::msg::PointCloud2::UniquePtr PerceptionController::CropPointCloud(
   {
     for (int x = x1; x < x2; ++x)
     {
-      float pixel_depth = depth_data[y * depth_row_stride + x];
+      float pixel_depth = sample_depth(x, y);
 
       // Python filter logic (lines 302-305)
       if (pixel_depth < min_depth || pixel_depth > max_depth)
@@ -737,8 +746,8 @@ sensor_msgs::msg::PointCloud2::UniquePtr PerceptionController::CropPointCloud(
         continue;
 
       // Use Python flat index formula directly (object_detection.py yolov9 lines 311-316)
-      // x, y are already in model_input_size space (640x352)
-      int flat_idx = GetCloudFlatIndex(x, y);
+      // x, y are in model_input_size space; scale to actual cloud dimensions
+      int flat_idx = GetCloudFlatIndex(x, y, cloud.width, cloud.height);
       size_t src_index = static_cast<size_t>(flat_idx) * cloud.point_step;
 
       // Check if point cloud point is valid
