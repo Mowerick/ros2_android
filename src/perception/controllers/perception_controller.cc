@@ -641,12 +641,15 @@ sensor_msgs::msg::PointCloud2::UniquePtr PerceptionController::CropPointCloud(
   cropped->is_dense = false;
 
   // Bbox is in model_input_size space (640x352).
-  // Python accesses depth directly at these coordinates: self.depth[y][x]
-  // This reads from the top-left of the full-res depth image.
-  int x1 = std::max(0, bbox.x);
-  int y1 = std::max(0, bbox.y);
-  int x2 = std::min(static_cast<int>(depth.width), bbox.x + bbox.width);
-  int y2 = std::min(static_cast<int>(depth.height), bbox.y + bbox.height);
+  // Depth image is full-resolution (e.g. 1920x1080) - scale bbox to depth coords.
+  float scale_x = static_cast<float>(depth.width) / kModelInputWidth;
+  float scale_y = static_cast<float>(depth.height) / kModelInputHeight;
+  int x1 = std::max(0, static_cast<int>(bbox.x * scale_x));
+  int y1 = std::max(0, static_cast<int>(bbox.y * scale_y));
+  int x2 = std::min(static_cast<int>(depth.width),
+                    static_cast<int>((bbox.x + bbox.width) * scale_x));
+  int y2 = std::min(static_cast<int>(depth.height),
+                    static_cast<int>((bbox.y + bbox.height) * scale_y));
 
   int crop_width = x2 - x1;
   int crop_height = y2 - y1;
@@ -662,11 +665,12 @@ sensor_msgs::msg::PointCloud2::UniquePtr PerceptionController::CropPointCloud(
   depth_values.reserve(crop_width * crop_height);
 
   const float *depth_data = reinterpret_cast<const float *>(depth.data.data());
+  const int depth_row_stride = static_cast<int>(depth.step / sizeof(float));
   for (int y = y1; y < y2; ++y)
   {
     for (int x = x1; x < x2; ++x)
     {
-      float d = depth_data[y * depth.width + x];
+      float d = depth_data[y * depth_row_stride + x];
       if (std::isfinite(d) && d > 0.0f)
       {
         depth_values.push_back(d);
@@ -676,7 +680,18 @@ sensor_msgs::msg::PointCloud2::UniquePtr PerceptionController::CropPointCloud(
 
   if (depth_values.empty())
   {
-    LOGW("No valid depth values in bbox");
+    // Sample a few raw values to diagnose the issue
+    float sample0 = depth.data.size() >= 4
+                        ? *reinterpret_cast<const float *>(depth.data.data())
+                        : -1.0f;
+    float sample_center = (depth.data.size() >= static_cast<size_t>((depth.height / 2 * depth_row_stride + depth.width / 2 + 1) * sizeof(float)))
+                              ? depth_data[depth.height / 2 * depth_row_stride + depth.width / 2]
+                              : -1.0f;
+    LOGW("No valid depth values in bbox [%d,%d,%d,%d] | depth %dx%d enc=%s step=%u data=%zu | raw[0]=%.4f raw[center]=%.4f | bbox x1=%d y1=%d x2=%d y2=%d stride=%d",
+         bbox.x, bbox.y, bbox.width, bbox.height,
+         depth.width, depth.height, depth.encoding.c_str(), depth.step,
+         depth.data.size(), sample0, sample_center,
+         x1, y1, x2, y2, depth_row_stride);
     return nullptr;
   }
 
@@ -713,7 +728,7 @@ sensor_msgs::msg::PointCloud2::UniquePtr PerceptionController::CropPointCloud(
   {
     for (int x = x1; x < x2; ++x)
     {
-      float pixel_depth = depth_data[y * depth.width + x];
+      float pixel_depth = depth_data[y * depth_row_stride + x];
 
       // Python filter logic (lines 302-305)
       if (pixel_depth < min_depth || pixel_depth > max_depth)
